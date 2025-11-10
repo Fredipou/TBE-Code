@@ -49,3 +49,13 @@ data_sub_pupe <- Recolte_foret[Recolte_foret$stade.c == 7, ]
 mod_L7 <- lm(rel_fitness ~ pheno.c + phenology_sq, data = data_sub_pupe)
 summary(mod_L7)
  
+## Trying with relative fitness across stages to see (and without pupae)
+
+data_nopupe <- Recolte_foret[Recolte_foret$stade.c != 7, ]
+data_nopupe <- data_nopupe %>%
+  group_by(stade.c) %>%
+  mutate(rel_fitness = survie_clean / mean(survie_clean, na.rm = T)) %>%
+  ungroup() 
+
+mod_all_stages <- lm(rel_fitness ~ pheno.c + phenology_sq, data = data_nopupe)
+summary(mod_all_stages)
