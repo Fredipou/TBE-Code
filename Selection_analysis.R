@@ -1,6 +1,14 @@
 ### Slection gradient analysis 
 ### From Lande (1983) and M. Barbour (xxxx)
 
+## Setup ----
+
+# source clean data
+source("Data_cleaning.R")
+
+# set plot theme
+theme_set(theme_cowplot()) # I had to for my eyes...
+
 ## Calculating mean survival for each larval stages and globally
 
 mean_survival = mean(Recolte_foret$survie_clean, na.rm = T)
@@ -20,24 +28,31 @@ Recolte_foret <- Recolte_foret %>%
   mutate(rel_fitness = survie_clean / mean(survie_clean, na.rm = T)) %>%
   ungroup()
 
+Recolte_foret$phenology_sq <- Recolte_foret$pheno.c^2 # this works, although I usually just do + I(pheno.c^2) directly in the model
+# doing it directly in the model will be easier for other packages to visualize the effects, otherwise it is treated as a different variable
+# either way, it needs to go before other subsets to continue working downstream.
+
 data_sub_L4 <- Recolte_foret[Recolte_foret$stade.c == 4, ]
 
-Recolte_foret$phenology_sq <- Recolte_foret$pheno.c^2
 
 mod_L4 <- lm(rel_fitness ~ pheno.c + phenology_sq, data = data_sub_L4)
 summary(mod_L4)
+summary(lm(rel_fitness ~ pheno.c, data = data_sub_L4)) # you could drop the higher-order term since there is no evidence supporting it
+# you will need to do it anyway to calculate the actual effect of directional selection
 
-
-Recolte_foret <- Recolte_foret %>%
-  group_by(stade.c) %>%
-  mutate(rel_fitness = survie_clean / mean(survie_clean, na.rm = T)) %>%
-  ungroup()
+# removing because this is redundant with above
+# Recolte_foret <- Recolte_foret %>%
+#   group_by(stade.c) %>%
+#   mutate(rel_fitness = survie_clean / mean(survie_clean, na.rm = T)) %>%
+#   ungroup()
 
 ## And for other Larval stages
 data_sub_L5 <- Recolte_foret[Recolte_foret$stade.c == 5, ]
 
 mod_L5 <- lm(rel_fitness ~ pheno.c + phenology_sq, data = data_sub_L5)
 summary(mod_L5)
+visreg::visreg(mod_L5)
+visreg::visreg(lm(rel_fitness ~ pheno.c + I(pheno.c^2), data = data_sub_L5)) # see how pheno.c is plotted together
 
 data_sub_L6 <- Recolte_foret[Recolte_foret$stade.c == 6, ]
 
