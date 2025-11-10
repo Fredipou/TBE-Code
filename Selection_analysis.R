@@ -25,8 +25,6 @@ View(Recolte_foret)
 
 Recolte_foret <- Recolte_foret %>%
   group_by(stade.c) %>%
-  # note that relative fitness should be calculated separately for each larval stage separately if you are trying to calculate
-  # selection gradients. A way to confirm if you did it correctly, is that the Estimate of the model (Intercept) should be 1
   mutate(rel_fitness = survie_clean / mean(survie_clean, na.rm = T)) %>%
   ungroup()
 
