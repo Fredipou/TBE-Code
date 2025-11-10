@@ -31,8 +31,8 @@ library(lmerTest)
 library(ggokabeito)
 
 #Set working directory
-
-setwd("C:/Users/fred1/Downloads/Maîtrise 2025/Analyses_TBE/Git/TBE-Code")
+# MAB: this step is not necessary since you are using Rprojects. It also makes your code less reproducible
+#setwd("C:/Users/fred1/Downloads/Maîtrise 2025/Analyses_TBE/Git/TBE-Code")
 
 # Importing data in R
 
