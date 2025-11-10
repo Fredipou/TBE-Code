@@ -1,6 +1,11 @@
 ### early visualisation and models with raw data
 
-## Early visulisation
+## source clean data ----
+source("Data_cleaning.R")
+
+## Early visulisation ----
+# MAB: try adding 4 dashes (or #) after different sections of your code to make it easier to hide it.
+# Not completely necessary here, but helpful for longer scripts.
 
 ## Feuillus vs ptoid
 ggplot(Recolte_foret, aes(x = feuillus, y = survie_clean)) +
