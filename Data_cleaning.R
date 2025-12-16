@@ -19,7 +19,13 @@
 #install.packages("tidybayes")
 #install.packages("bayesplot")
 #install.packages("tidyr")
+#install.packages("visreg")
+install.packages("mgcv")
+install.packages("gratia")
 
+library(gratia)
+library(mgcv)
+library(visreg)
 library(tidyr)
 library(bayesplot)
 library(tidybayes)
@@ -134,3 +140,4 @@ Recolte_foret <- Recolte_foret %>%
   mutate(survie_clean = ifelse(survie_larve == 0 & 
                                      pres_ptoid == 0, 
                                    NA, survie_larve))
+view(Recolte_foret)

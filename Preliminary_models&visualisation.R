@@ -50,6 +50,7 @@ ggplot(Recolte_foret, aes(x = feuillus, y = survie_clean, color = factor(pheno.c
   #geom_point() +
   geom_smooth(method = "glm", method.args = list(family = "binomial"))
 
+
 ## Survival vs forest comp by larval stages
 
 ggplot(Recolte_foret, aes(x = feuillus, y =survie_clean, color = stade)) +
@@ -100,3 +101,4 @@ ggplot(Recolte_foret, aes(x=date_pose.c, y = pres_ptoid))+
 model_glmer <- glmer(pres_ptoid_clean ~ feuillus + pheno.c*stade.c + (1 | parcelle), 
                      family = binomial, data = Recolte_foret)
 summary(model_glmer)
+
