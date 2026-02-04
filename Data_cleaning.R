@@ -20,8 +20,8 @@
 #install.packages("bayesplot")
 #install.packages("tidyr")
 #install.packages("visreg")
-install.packages("mgcv")
-install.packages("gratia")
+#install.packages("mgcv")
+#install.packages("gratia")
 
 library(gratia)
 library(mgcv)

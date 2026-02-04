@@ -79,20 +79,27 @@ AIC(model_glmer_1.1, model_gam_date2)
 #### Essai de transférer ce modèle en Bayesien
 
 # Priors
-priors <- c(
-  set_prior("normal(0, 0.5)", class = "b"),       
-  set_prior("student_t(3, 0, 2)", class = "sd")    
+
+updated_priors <- c(
+  set_prior("normal(0, 0.5)", class = "b"),        # Fixed effects
+  set_prior("student_t(3, 0, 2)", class = "sd"),   # Random effects
+  set_prior("normal(0, 1)", class = "sds")         # Smooth standard deviation
 )
 
-# Bayesian GAM
-bayes_model <- brm(
-  formula = pres_ptoid_clean ~ feuillus + s(date_pose.c, k = 6) + (1 | parcelle),
-  family = bernoulli(), 
+# Updated Bayesian GAM
+
+updated_bayes_model <- brm(
+  formula = pres_ptoid_clean ~ feuillus + s(date_pose.c, k = 6, bs = "tp") + (1 | parcelle),
+  family = bernoulli(),       
   data = data_nopupe,
-  prior = priors,
+  prior = updated_priors,
   chains = 4,
   iter = 4000,
   warmup = 1000,
   cores = 4,
-  seed = 123
+  seed = 123,
+  control = list(adapt_delta = 0.95, max_treedepth = 15)
 )
+
+summary(updated_bayes_model)  
+pp_check(updated_bayes_model)
