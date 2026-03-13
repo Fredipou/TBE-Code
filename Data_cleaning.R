@@ -1,6 +1,6 @@
 #####
 
-## Install and Load packages
+## Install and Load packages ----
 
 #install.packages("ggokabeito")
 #install.packages("ggplot2")
@@ -48,7 +48,7 @@ library(ggokabeito)
 # MAB: this step is not necessary since you are using Rprojects. It also makes your code less reproducible
 #setwd("C:/Users/fred1/Downloads/Maîtrise 2025/Analyses_TBE/Git/TBE-Code")
 
-# Importing data in R
+# Importing data in R ----
 
 Carac_arbre <- read_excel("Carac.xlsx", sheet = 1)
 #view(Carac_arbre)
@@ -59,7 +59,7 @@ Recolte <- read_excel("Recolte_TBE.xlsx")
 Carac_arbuste <- read_excel("Carac.xlsx", sheet = 2)
 #view(Carac_arbuste)
 
-#### Function to change Counting data into relative abundance
+#### Function to change Counting data into relative abundance ----
 
 normalize_row <- function(row) {
   id <- row[1]
@@ -96,7 +96,7 @@ Type_foret <- Type_foret_1 %>%
     )
   )
 
-# Adding diversity variables for later analysis
+# Adding diversity variables for later analysis ----
 
 arbre_arbuste = left_join(Carac_arbre, Carac_arbuste, by = "parcelle")
 arbre_arbuste$parcelle <- gsub("-", "", arbre_arbuste$parcelle)
@@ -108,7 +108,7 @@ mutate(div = rowSums(across(-parcelle, ~ .x > 0)))
 Recolte_foret <- Recolte %>%
   left_join(Type_foret, by = "parcelle")
 
-### Clean data set
+### Clean data set ----
 
 ### Add Pheno, stade, and date as a continuous variable
 
@@ -130,14 +130,31 @@ Recolte_foret <- Recolte_foret %>%
 
 
 ### Cleaning survival and parasitism variable to not include case where larvae dies
-### before either completing life cycle or ptoid emergence
+### before either completing life cycle or ptoid emergence (no longer usefull)
 
-Recolte_foret <- Recolte_foret %>%
-  mutate(pres_ptoid_clean = ifelse(survie_larve == 0 & 
-                                     pres_ptoid == 0, 
-                                   NA, pres_ptoid))
-Recolte_foret <- Recolte_foret %>%
-  mutate(survie_clean = ifelse(survie_larve == 0 & 
-                                     pres_ptoid == 0, 
-                                   NA, survie_larve))
-view(Recolte_foret)
+#Recolte_foret <- Recolte_foret %>%
+  #mutate(pres_ptoid_clean = ifelse(survie_larve == 0 & 
+    #                                 pres_ptoid == 0, 
+      #                             NA, pres_ptoid))
+#Recolte_foret <- Recolte_foret %>%
+ # mutate(survie_clean = ifelse(survie_larve == 0 & 
+ #                                    pres_ptoid == 0, 
+ #                                  NA, survie_larve))
+#view(Recolte_foret)
+
+### Importing ptoid/host traits dataset ----
+
+Ptoid_traits <- read_excel("Traits_ptoid.xlsx", sheet = 1)
+Ptoid_traits_long <- read_excel("Traits_ptoid.xlsx", sheet = 2)
+Ptoid_host <- read_excel("Traits_ptoid.xlsx", sheet = 3)
+Lepidop_host <- read_excel("Traits_ptoid.xlsx", sheet = 4)
+
+# Change NA for 0 in Ptoid_host and Lepidop_host
+
+Ptoid_host <- Ptoid_host %>%
+  mutate(across(where(is.numeric), ~replace_na(.x, 0)),
+         across(where(is.character), ~replace_na(.x, "0")))
+
+Lepidop_host <- Lepidop_host %>%
+  mutate(across(where(is.numeric), ~replace_na(.x, 0)),
+         across(where(is.character), ~replace_na(.x, "0")))
