@@ -3,21 +3,18 @@
 ## Source clean data ----
 source("Data_cleaning.R")
 
-## Det plot theme
-theme_set(theme_cowplot()) 
-
 ## Early visualisation ----
 
 ## 1) Feuillus and survival ----
 
-ggplot(Recolte_foret, aes(x = feuillus, y = survie_larve)) +
+ggplot(Recolte_foret, aes(x = feuillus, y = survie_larve, color = stade.c)) +
   geom_point(alpha = 0.3, position = position_jitter(height = 0.05)) +
-  geom_smooth(method = "glm", method.args = list(family = "binomial"), 
+  geom_smooth(aes(group=stade.c),method = "glm", method.args = list(family = "binomial"), 
               se = TRUE, color = "#0072B2", size = 1.2) +
   labs(
     title = "Effet du % de feuillus sur la probabilité de survie",
     x = "% de feuillus",
-    y = "Probabilité de parasitisme"
+    y = "Probabilité de survie"
   ) +
   theme_minimal()
 

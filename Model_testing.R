@@ -14,9 +14,16 @@
 # Selection dans phenologie imposée par parasitisme
 # Log mean fitness
 
-model_glmer_1 <- glmer(pres_ptoid ~ feuillus + pheno.c*stade + (1 | parcelle), 
+model_glmer_1 <- glmer(pres_ptoid ~ as.numeric(feuillus) * pheno.c*stade + (1 | parcelle), 
                      family = binomial, data = Recolte_foret)
 summary(model_glmer_1)
+
+## essayer glmmtmb, essayer de faire converger
+install.packages("glmmTMB")
+install.packages("reformulas")
+
+model_glmer_1 <- glmmTMB(pres_ptoid ~ feuillus*pheno.c*stade + (1 | parcelle), 
+                       family = binomial, data = Recolte_foret)
 
 # AIC of 586 and Feuillus + stade.c < 0.05, but no interaction of stade and pheno
 
@@ -28,7 +35,7 @@ summary(model_glmer_2)
 
 ## Sans les pupes
 
-model_glmer_1.1 <- glmer(pres_ptoid_clean ~ feuillus + pheno.c*stade + (1 | parcelle), 
+model_glmer_1.1 <- glmer(pres_ptoid ~ feuillus * pheno.c*stade + (1 | parcelle), 
                        family = binomial, data = data_nopupe)
 summary(model_glmer_1.1)
 
@@ -76,6 +83,7 @@ model_gam_date2.2 <- gam(
   data = data_nopupe,
   method = "REML"
 )
+
 model_gam_date2 <- gam(
   pres_ptoid ~ 
     as.numeric(feuillus) +

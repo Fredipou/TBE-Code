@@ -2,6 +2,11 @@
 
 source("Data_cleaning.R")
 
+#Converting to factor for GAM models
+Recolte_foret$parcelle <- as.factor(Recolte_foret$parcelle)
+data_nopupe$stade <- as.factor(data_nopupe$stade)
+data_nopupe$parcelle <- as.factor(data_nopupe$parcelle)
+
 ### First option (GLMER) ----
 ### Mod with pupae ----
 
@@ -82,10 +87,6 @@ Surv_late = 0.242*0.190*0.679
 
 ### Second option (GAM with date_pose.c) ----
 ## Gam since it seems that date_pose.c isn't linear
-
-Recolte_foret$parcelle <- as.factor(Recolte_foret$parcelle)
-data_nopupe$stade <- as.factor(data_nopupe$stade)
-data_nopupe$parcelle <- as.factor(data_nopupe$parcelle)
 
 gamm_ptoid_simple <- gam(
   pres_ptoid ~ feuillus +
@@ -225,6 +226,7 @@ preds <- predict(gamm_ptoid_simple,
                  newdata = pred_data,
                  type    = "link",
                  se.fit  = TRUE)
+
 # include Id to have prediction for all parcels
 
 # Add confidence interval
@@ -277,34 +279,145 @@ ptoid_results <- pred_data %>%
 
 view(ptoid_results)
 
+## New model with Allen's suggestion
 
-#3. Plot
-pred_data$path        <- factor(pred_data$path,        levels = c("early", "peak", "late"))
-pred_data$stage_label <- factor(pred_data$stage_label, levels = c("L4", "L5", "L6"))
+#data_nopupe$pheno_stade <- interaction(data_nopupe$pheno.c, data_nopupe$stade, drop = TRUE)
 
-ggplot(pred_data, aes(x = date_pose.c, y = prob, colour = path, group = path)) +
-  geom_ribbon(aes(ymin = prob_lower, ymax = prob_upper, fill = path),
-              alpha = 0.15, colour = NA) +
-  geom_line(linewidth = 1) +
-  geom_point(aes(shape = stage_label), size = 3) +
-  scale_colour_manual(values = c("early" = "#2166ac",
-                                 "peak"  = "#d6604d",
-                                 "late"  = "#4dac26")) +
-  scale_fill_manual(values   = c("early" = "#2166ac",
-                                 "peak"  = "#d6604d",
-                                 "late"  = "#4dac26")) +
-  scale_shape_manual(values  = c("L4" = 15, "L5" = 16, "L6" = 17)) +
-  scale_y_continuous(limits  = c(0, 1), labels = scales::percent_format(accuracy = 1)) +
-  scale_x_continuous(breaks  = c(141, 148, 150, 155, 157, 162, 164, 171, 177)) +
-  labs(x        = "Date pose (day of year)",
-       y        = "Predicted P(parasitoid presence)",
-       colour   = "Phenological path",
-       fill     = "Phenological path",
-       shape    = "Larval stage",
-       title    = "Expected parasitoid presence across larval life",
-       subtitle = "Population-level predictions at mean feuillus (parcelle effect excluded)") +
-  theme_bw() +
-  theme(legend.position = "bottom",
-        axis.text.x = element_text(angle = 45, hjust = 1))
+gamm_ptoid_new <- gam(
+  pres_ptoid ~ feuillus * stade.c * pheno.c +
+    s(date_pose.c, k = 7) +                   
+    s(date_pose.c, by = pheno.c, k = 7) +     
+    s(parcelle, bs = "re"),
+  family = binomial, data = data_nopupe, method = "REML"
+)
+summary(gamm_ptoid_new)
+gam.check(gamm_ptoid_new)
 
+# As-t-on vraiment besoin d'un smooth si edf=1 pour date_pose.c? :
 
+mod_test <- gam(
+  pres_ptoid ~ feuillus * stade.c * pheno.c +
+    date_pose.c +            
+    s(parcelle, bs = "re"),
+  family = binomial, 
+  data = data_nopupe, 
+  method = "REML"
+)
+summary(mod_test)
+
+#####
+
+# Grille complète : 9 combinaisons × toutes les parcelles
+
+pred_all_terrain <- expand.grid(
+  date_pose.c = c(141, 148, 164, 150, 155, 171, 157, 162, 177), #Date terrain
+  parcelle    = levels(data_nopupe$parcelle)
+) %>%
+  mutate(
+    stade.c  = case_when(
+      date_pose.c %in% c(141, 150, 157) ~ 4,
+      date_pose.c %in% c(148, 155, 162) ~ 5,
+      date_pose.c %in% c(164, 171, 177) ~ 6
+    ),
+    pheno.c  = case_when(
+      date_pose.c %in% c(141, 148, 164) ~ -1,
+      date_pose.c %in% c(150, 155, 171) ~  0,
+      date_pose.c %in% c(157, 162, 177) ~  1
+    ),
+    feuillus = mean(data_nopupe$feuillus, na.rm = TRUE)
+  )
+
+# Prédictions pour toutes les parcelles — sans exclude
+
+preds_all_terrain <- predictions(mod_test, newdata = pred_all_terrain)
+
+# Moyenne par parcelle pour avoir effet populationnel
+
+preds_avg_terrain <- preds_all_terrain %>%
+  group_by(date_pose.c, stade.c, pheno.c) %>%
+  summarise(
+    estimate = mean(estimate),
+    conf.low = mean(conf.low),
+    conf.high = mean(conf.high),
+    .groups = "drop"
+  )
+
+preds_avg_terrain
+
+###
+
+surv_avg_terrain <- preds_avg_terrain %>%
+  mutate(surv = 1 - estimate,
+         surv_lo = 1 - conf.high,
+         surv_hi = 1 - conf.low) %>%
+  group_by(pheno.c) %>%
+  summarise(
+    surv_prod    = prod(surv),
+    surv_prod_lo = prod(surv_lo),
+    surv_prod_hi = prod(surv_hi),
+    .groups = "drop"
+  ) %>%
+  mutate(pheno = case_when(
+    pheno.c == -1 ~ "early",
+    pheno.c ==  0 ~ "peak",
+    pheno.c ==  1 ~ "late"
+  ))
+
+surv_avg_terrain
+
+# Same thing but with real pheno dates from biosim
+
+pred_all_real <- expand.grid(
+  date_pose.c = c(145, 151, 163, 155, 162, 176, 166, 174, 190), #Date terrain
+  parcelle    = levels(data_nopupe$parcelle)
+) %>%
+  mutate(
+    stade.c  = case_when(
+      date_pose.c %in% c(145, 155, 166) ~ 4,
+      date_pose.c %in% c(151, 162, 174) ~ 5,
+      date_pose.c %in% c(163, 176, 190) ~ 6
+    ),
+    pheno.c  = case_when(
+      date_pose.c %in% c(145, 151, 163) ~ -1,
+      date_pose.c %in% c(155, 162, 176) ~  0,
+      date_pose.c %in% c(166, 174, 190) ~  1
+    ),
+    feuillus = mean(data_nopupe$feuillus, na.rm = TRUE)
+  )
+
+# Prédictions pour toutes les parcelles — sans exclude
+preds_all_real <- predictions(mod_test, newdata = pred_all_real)
+
+# Moyenne sur les parcelles par combinaison stade × phéno
+
+preds_avg_real <- preds_all_real %>%
+  group_by(date_pose.c, stade.c, pheno.c) %>%
+  summarise(
+    estimate = mean(estimate),
+    conf.low = mean(conf.low),
+    conf.high = mean(conf.high),
+    .groups = "drop"
+  )
+
+preds_avg_real
+
+###
+
+surv_avg_real <- preds_avg_real %>%
+  mutate(surv = 1 - estimate,
+         surv_lo = 1 - conf.high,
+         surv_hi = 1 - conf.low) %>%
+  group_by(pheno.c) %>%
+  summarise(
+    surv_prod    = prod(surv),
+    surv_prod_lo = prod(surv_lo),
+    surv_prod_hi = prod(surv_hi),
+    .groups = "drop"
+  ) %>%
+  mutate(pheno = case_when(
+    pheno.c == -1 ~ "early",
+    pheno.c ==  0 ~ "peak",
+    pheno.c ==  1 ~ "late"
+  ))
+
+surv_avg_real
