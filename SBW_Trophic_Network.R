@@ -113,3 +113,4 @@ arbustes <- c("Amelanchier alnifolia", "Amelanchier canadensis",
 herbacees <- c("Aralia nudicaulis", "Solidago sp.",
                "Urtica dioica", "Sanguisorba officinalis",
                "Aster novae-angliae", "Silene vulgaris")
+
