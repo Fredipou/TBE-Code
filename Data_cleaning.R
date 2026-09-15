@@ -15,6 +15,7 @@
 #install.packages("tidyverse")
 #install.packages("ggeffects")
 #install.packages("lme4")
+#install.packages("collapse", type = "binary")
 #install.packages("glmmTMB")
 #install.packages("marginaleffects")
 #install.packages("brms")
@@ -34,6 +35,10 @@
 # install.packages("rayshader")
 #install.packages("rayshader")
 #install.packages("MuMIn")
+#install.packages("MetBrewer")
+#install.packages("viridis")
+library(viridis)
+library(MetBrewer)
 library(haven)
 library(MuMIn)
 library(rayshader)
@@ -51,6 +56,7 @@ library(visreg)
 library(tidyr)
 library(bayesplot)
 library(tidybayes)
+library(collapse)
 library(brms)
 library(marginaleffects)
 library(lme4)
@@ -75,11 +81,20 @@ theme_set(theme_cowplot())
 Carac_arbre <- read_excel("Carac.xlsx", sheet = 1)
 #view(Carac_arbre)
 
-Recolte <- read_excel("Recolte_TBE.xlsx")
+Recolte_2025 <- read_excel("Recolte_TBE.xlsx")
 #View(Recolte_TBE)
 
 Carac_arbuste <- read_excel("Carac.xlsx", sheet = 2)
 #view(Carac_arbuste)
+
+Biomasse <- read_excel("biomasse_2026.xlsx")
+#view(Biomasse)
+
+Recolte_2026 <- read_excel("Recolte_TBE.xlsx", sheet = 2)
+#View(Recolte_2026)
+
+rain_2025 <- read.csv("meteo_megantic.csv", skip = 4)
+rain_2026 <- read.csv("meteo_megantic_2026.csv", skip = 4)
 
 #### Function to change Counting data into relative abundance ----
 
@@ -105,7 +120,7 @@ Carac_normal_clean <- Carac_normal %>%
 Type_foret_1 <- Carac_normal_clean %>%
   mutate(
     conifere = ABBA + PIMA + PIGL,
-    feuillus = BEPA + BEAL + ACSU + ACPE + SODE + PODE + FAGR
+    feuillus = BEPA + BEAL + ACSA + ACPE + SODE + PODE + FAGR
   ) #%>%
 #select(-ABBA, -PIMA, -PIGL, -BEPA, -BEAL, -ACSU, -ACPE, -SODE, -PODE, -FAGR)
 
@@ -125,10 +140,49 @@ arbre_arbuste$parcelle <- gsub("-", "", arbre_arbuste$parcelle)
 arbre_arbuste <- arbre_arbuste %>%
 mutate(div = rowSums(across(-parcelle, ~ .x > 0)))
 
-## Joining carac data and Larvae survival data
+## Adding Biomass data from 2026 for later analysis ----
+
+# mean DHP
+
+Biomasse <- Biomasse %>%
+  mutate(DHP = as.numeric(DHP))
+
+DHP_moyen <- Biomasse %>%
+  group_by(parcelle, species) %>%
+  summarise(
+    DHP_qmd = sqrt(mean(DHP^2, na.rm = TRUE)),
+    .groups = "drop"
+  ) %>%
+  mutate(
+    DHP_qmd = ifelse(is.nan(DHP_qmd), NA_real_, DHP_qmd),
+    species = paste0(species, "_DHP")
+  )
+
+DHP_large <- DHP_moyen %>%
+  pivot_wider(
+    id_cols = parcelle,
+    names_from = species,
+    values_from = DHP_qmd
+  )
+
+## Joining carac, DHP and Larvae survival data
+
+Foret_2025 <- Recolte_2025 %>%
+  left_join(Type_foret, by = "parcelle")
+
+Foret_2025 <- Foret_2025 %>%
+  mutate(pres_ptoid = as.numeric(pres_ptoid))
+
+Foret_2026 <- Recolte_2026 %>%
+  left_join(Type_foret, by = "parcelle")
+
+Foret_2026 <- Foret_2026 %>%
+  mutate(pres_ptoid = as.numeric(pres_ptoid))
+
+Recolte = bind_rows(Foret_2025,Foret_2026)
 
 Recolte_foret <- Recolte %>%
-  left_join(Type_foret, by = "parcelle")
+  left_join(DHP_large, by = "parcelle")
 
 ### Clean data set ----
 
@@ -150,22 +204,18 @@ Recolte_foret <- Recolte_foret %>%
 Recolte_foret <- Recolte_foret %>%
   mutate(date_recolte.c = yday(date_recolte))
 
-### Now object substracting stade Pupae from the data
-data_nopupe <- Recolte_foret[Recolte_foret$stade.c != 7, ]
-data_justpupe = Recolte_foret[Recolte_foret$stade.c == 7,]
-
 ### Cleaning survival and parasitism variable to not include case where larvae dies
 ### before either completing life cycle or ptoid emergence (no longer usefull,
 ### since DNA testing has confirmed presence or absence even when 0-0)
 
-#Recolte_foret <- Recolte_foret %>%
-  #mutate(pres_ptoid_clean = ifelse(survie_larve == 0 & 
-    #                                 pres_ptoid == 0, 
-      #                             NA, pres_ptoid))
-#Recolte_foret <- Recolte_foret %>%
- # mutate(survie_clean = ifelse(survie_larve == 0 & 
- #                                    pres_ptoid == 0, 
- #                                  NA, survie_larve))
+Recolte_foret <- Recolte_foret %>%
+  mutate(pres_ptoid_clean = ifelse(survie_larve == 0 & 
+                                   pres_ptoid == 0, 
+                                   NA, pres_ptoid))
+Recolte_foret <- Recolte_foret %>%
+  mutate(survie_clean = ifelse(survie_larve == 0 & 
+                                     pres_ptoid == 0, 
+                                   NA, survie_larve))
 #view(Recolte_foret)
 
 ### Importing ptoid/host traits dataset ----
@@ -210,7 +260,7 @@ Lepidop_host[-1] <- lapply(Lepidop_host[-1], function(x) {
 
 #Drawback is this is a really big dataset
 
-BIOSIM_FULL = read.csv("FULL_DATA_2025_2026.csv")
+#BIOSIM_FULL = read.csv("FULL_DATA_2025_2026.csv")
 
 ## Transforming into DOY 
 
@@ -301,3 +351,91 @@ PHENO_2026 <- expand.grid(stage_larve = stage_larve,
 #  filter(pct_L4 >= 0.05) %>%
 #  slice(1) %>%
 #  pull(DOY)
+
+
+## DHP * Adundance for biomass/site
+# With mean DHP/species and general site composition in %
+
+especes <- c(
+  "ABBA", "PIMA", "BEPA", "BEAL",
+  "ACSA", "ACPE", "SODE", "FAGR"
+)
+
+biomasse_index <- Carac_arbre %>%
+  left_join(DHP_large, by = "parcelle") %>%
+  rowwise() %>%
+  mutate(
+    biomasse_index = sum(
+      c_across(all_of(especes)) *
+        c_across(all_of(paste0(especes, "_DHP")))^2,
+      na.rm = TRUE
+    )
+  ) %>%
+  ungroup() %>%
+  select(parcelle, biomasse_index)
+
+Recolte_foret <- Recolte_foret %>%
+  left_join(biomasse_index, by = "parcelle")
+# Higher biomass_index = more tree or bigger tree in a site (or both)
+
+## Seprate 2025 and 2026 for later analysis
+
+Recolte_foret_2025 <- Recolte_foret %>%
+  filter(substr(date_pose, 1, 4) == "2025")
+
+Recolte_foret_2026 <- Recolte_foret %>%
+  filter(substr(date_pose, 1, 4) == "2026")
+
+### Now object substracting stade Pupae from the data
+data_nopupe <- Recolte_foret[Recolte_foret$stade.c != 7, ]
+data_justpupe = Recolte_foret[Recolte_foret$stade.c == 7,]
+
+data_nopupe_2025 <- Recolte_foret_2025[Recolte_foret_2025$stade.c != 7, ]
+data_nopupe_2026 <- Recolte_foret_2026[Recolte_foret_2026$stade.c != 7, ]
+
+data_nopupe$date_pose <- as.Date(data_nopupe$date_pose)
+data_nopupe$annee <- factor(format(data_nopupe$date_pose, "%Y"))
+data_nopupe$jour_saison <- as.numeric(format(data_nopupe$date_pose, "%j"))
+
+data_nopupe <- data_nopupe %>%
+  mutate(annee = factor(year(date_pose)))
+
+data_nopupe_2025 <- data_nopupe_2025 %>%
+  mutate(annee = factor(year(date_pose)))
+         
+data_nopupe_2026 <- data_nopupe_2026 %>%
+  mutate(annee = factor(year(date_pose)))
+
+  ## Adding rain as a variable ----
+
+rain_2025 <- rain_2025 %>%
+  mutate(DATE = as.Date(DATE, format = "%Y-%m-%d"),
+         jour_julien = yday(DATE))
+
+rain_2026 <- rain_2026 %>%
+  mutate(DATE = as.Date(DATE, format = "%Y-%m-%d"),
+         jour_julien = yday(DATE))
+
+rain_all <- bind_rows(rain_2025, rain_2026) %>%
+  mutate(DATE = as.Date(DATE, format = "%Y-%m-%d")) %>%
+  distinct(DATE, .keep_all = TRUE)
+
+precip_par_periode <- Recolte_foret %>%
+  mutate(
+    date_pose = as.Date(date_pose, format = "%Y-%m-%d"),
+    date_recolte = as.Date(date_recolte, format = "%Y-%m-%d"),
+    row_id = row_number()
+  ) %>%
+  rowwise() %>%
+  mutate(
+    precip_cumulee = sum(
+      rain_all$PRECIP_TOTAL_DAY_MM[rain_all$DATE >= date_pose & rain_all$DATE <= date_recolte],
+      na.rm = TRUE
+    ),
+    nb_jours = as.numeric(date_recolte - date_pose) + 1,
+    precip_moyenne_jour = precip_cumulee / nb_jours
+  ) %>%
+  ungroup()
+
+
+
