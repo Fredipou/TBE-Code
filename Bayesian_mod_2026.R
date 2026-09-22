@@ -469,8 +469,8 @@ selection_gradients_quad_2026 <- preds_draws_2026 %>%
     )
   ) %>%
   group_by(drawid, pheno_num) %>%
-  summarise(surv_prod = prod(surv), .groups = "drop") 
-  mutate(log_surv = log(surv_prod)) 
+  summarise(surv_prod = prod(surv), .groups = "drop")%>%
+  mutate(log_surv = log(surv_prod)) %>%
   group_by(drawid) %>%
   summarise(
     gamma_raw = coef(lm(log_surv ~ pheno_num + I(pheno_num^2)))[3],
@@ -490,8 +490,9 @@ gamma_summary_2026
 # Intervalle inclut 0 aussi et très large, signe positif mais trop incertain pour en conclure
 # quelque chose?
 
-### Essai de quelques visualisations ----
-#1
+### Essai de quelques visualisations
+
+#Figure: Gradient de sélection Beta et gamme selon l'année ----
 
 gradient_summary <- bind_rows(
   beta_summary_2025 %>% mutate(annee = "2025", gradient = "β (directionnel)", 
@@ -512,7 +513,7 @@ ggplot(gradient_summary, aes(x = mean, y = interaction(gradient, annee), color =
   labs(x = "Estimé du gradient de sélection", y = NULL, color = "Année") +
   theme_cowplot()
 
-#2 ggplot spagh  ----
+## Figure: Approximation linéaire du gradient ----
 
 fit_lines <- function(preds_draws, annee_label) {
   preds_draws %>%
@@ -565,17 +566,35 @@ mean_lines <- lines_all %>%
   unnest(pheno_num) %>%
   mutate(fitted = intercept_mean + beta_mean * pheno_num)
 
+# Préparer les points réels (moyennes + IC) pour superposition
+points_reels <- log_surv_draws_all %>%
+  mutate(pheno_num = case_when(
+    pheno.c == "early" ~ -1,
+    pheno.c == "peak"  ~ 0,
+    pheno.c == "late"  ~ 1
+  )) %>%
+  group_by(annee, pheno_num) %>%
+  summarise(
+    log_surv_mean = mean(log_surv),
+    log_surv_lwr = quantile(log_surv, 0.025),
+    log_surv_upr = quantile(log_surv, 0.975),
+    .groups = "drop"
+  )
+
 ggplot() +
   geom_line(data = lines_expanded, aes(x = pheno_num, y = fitted, group = drawid), 
             alpha = 0.08, color = "steelblue") +
   geom_line(data = mean_lines, aes(x = pheno_num, y = fitted), 
-            color = "black", linewidth = 1.2) +
+            color = "black", linewidth = 1.2, linetype = "dashed") +
+  geom_pointrange(data = points_reels, 
+                  aes(x = pheno_num, y = log_surv_mean, ymin = log_surv_lwr, ymax = log_surv_upr),
+                  color = "darkred", size = 0.7) +
   scale_x_continuous(breaks = c(-1, 0, 1), labels = c("Early", "Peak", "Late")) +
   facet_wrap(~ annee) +
   labs(
     x = "Scénario phénologique",
-    y = "log(survie relative) ajustée",
-    title = "Gradient de sélection directionnel : pentes individuelles vs moyenne"
+    y = "log(survie)",
+    title = "Gradient directionnel vs valeurs réelles prédites (points rouges)"
   ) +
   theme_cowplot() +
   panel_border()
@@ -588,7 +607,9 @@ ggplot() +
 ## Changer pheno.c de -1 à -2 et 2 ou essayer (ou -1.96/1.96) dans lm gradient de sélection
 ## Pour avoir 84 parcelles utiliser re_formula = NULL, avec une valeur propre pour chaque parcelle
 
-## Mod Bayesian pour chaque année ----
+## Autres Modèles Bayesiens ----
+
+## Modèles séparés par années ----
 
 ptoid_main_2025 <- brm(
   pres_ptoid ~ feuillus +
@@ -609,14 +630,14 @@ ptoid_main_2025 <- readRDS("ptoid_main_2025.rds")
 #plot(ptoid_main_2025)
 #pp_check(ptoid_main_2025)
 
-parcelle_ID <- unique(data_nopupe_2025$parcelle)
+#parcelle_ID <- unique(data_nopupe_2025$parcelle)
+#plot_predictions(ptoid_main_2025,
+#                 newdata = filter(data_nopupe_2025, parcelle %in% parcelle_ID[1:10]),
+#                 by = c("date_pose.c","parcelle")) +
+#  facet_wrap(~parcelle) +
+#  geom_point(data = filter(data_nopupe_2025, parcelle %in% parcelle_ID[1:10]),
+#             aes(x = date_pose.c, y = pres_ptoid)
 
-plot_predictions(ptoid_main_2025,
-                 newdata = filter(data_nopupe_2025, parcelle %in% parcelle_ID[1:10]),
-                 by = c("date_pose.c","parcelle")) +
-  facet_wrap(~parcelle) +
-  geom_point(data = filter(data_nopupe_2025, parcelle %in% parcelle_ID[1:10]),
-             aes(x = date_pose.c, y = pres_ptoid))
 
 ptoid_main_2026 <- brm(
   pres_ptoid ~ feuillus +
@@ -659,7 +680,7 @@ saveRDS(ptoid_main_interaction, file = "ptoid_main_interaction.rds")
 
 #semble qu'il y ait une différence de l'effet de feuillus entre les années mais de peu.
 
-## Vérifications des données réelles vs prédites ----
+## Vérifications des données réelles vs prédites pour modèles séparés ----
 
 range_2025 <- range(data_nopupe_2025$date_pose.c, na.rm = TRUE)
 range_2026 <- range(data_nopupe_2026$date_pose.c, na.rm = TRUE)
@@ -708,7 +729,7 @@ ggplot() +
   ) +
   theme_bw()
 
-## Figure 3: Date_pose.c en X, survie selon le scénarios phéno en y selon l'année ----
+## Figure: Date_pose.c en X, survie selon le scénarios phéno en y selon l'année ----
 
 # 1. Grille continue
 
@@ -856,7 +877,7 @@ grille_dates_2026 <- expand.grid(
     parcelle = factor(levels(data_nopupe_2026$parcelle)[1], levels = levels(data_nopupe_2026$parcelle))
   )
 
-# ---- Fonction : beta (gradient linéaire) pour chaque valeur de feuillus, un modèle donné ----
+#Fonction : beta (gradient linéaire) pour chaque valeur de feuillus, un modèle donné ----
 
 compute_beta_par_feuillus <- function(grille_dates, feuillus_values, modele) {
   
@@ -890,7 +911,7 @@ compute_beta_par_feuillus <- function(grille_dates, feuillus_values, modele) {
     )
 }
 
-# ---- Application aux deux modèles séparés ----
+# Application aux deux modèles séparés ----
 
 beta_par_feuillus_2025 <- compute_beta_par_feuillus(grille_dates_2025, feuillus_values_2025, ptoid_main_2025)
 beta_par_feuillus_2026 <- compute_beta_par_feuillus(grille_dates_2026, feuillus_values_2026, ptoid_main_2026)
