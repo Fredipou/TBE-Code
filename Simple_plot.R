@@ -2,19 +2,29 @@
 
 ## Source clean data ----
 source("Data_cleaning.R")
-
+# Tous les stades, par année
+Recolte_foret %>%
+  mutate(annee = year(as.Date(date_pose, format = "%Y-%m-%d"))) %>%
+  group_by(annee) %>%
+  summarise(
+    n_total = n(),
+    n_avec_statut = sum(!is.na(pres_ptoid)),
+    n_parasitoides = sum(pres_ptoid == 1, na.rm = TRUE),
+    n_non_parasites = sum(pres_ptoid == 0, na.rm = TRUE),
+    prop_parasitisme = mean(pres_ptoid, na.rm = TRUE)
+  )
 ## Early visualisation ----
 
 ## 1) Feuillus and survival ----
 
-ggplot(Recolte_foret, aes(x = feuillus, y = survie_larve, color = stade.c)) +
+ggplot(Recolte_foret, aes(x = feuillus, y = pres_ptoid, color = stade.c)) +
   geom_point(alpha = 0.3, position = position_jitter(height = 0.05)) +
   geom_smooth(aes(group=stade.c),method = "glm", method.args = list(family = "binomial"), 
               se = TRUE, color = "#0072B2", size = 1.2) +
   labs(
-    title = "Effet du % de feuillus sur la probabilité de survie",
+    title = "Effet du % de feuillus sur la probabilité de ptoid",
     x = "% de feuillus",
-    y = "Probabilité de survie"
+    y = "Probabilité de ptoid"
   ) +
   theme_minimal()
 
@@ -24,9 +34,25 @@ ggplot(Recolte_foret, aes(x = feuillus, y = survie_larve, color = factor(pheno.c
   #geom_point() +
   geom_smooth(method = "glm", method.args = list(family = "binomial"))
 
+ggplot(Recolte_foret_2025, aes(x = feuillus, y = survie_larve, color = factor(pheno.c))) +
+  #geom_point() +
+  geom_smooth(method = "glm", method.args = list(family = "binomial"))
+
+ggplot(Recolte_foret_2026, aes(x = feuillus, y = survie_larve, color = factor(pheno.c))) +
+  #geom_point() +
+  geom_smooth(method = "glm", method.args = list(family = "binomial"))
+
 ## 1.2) By larval stages
 
-ggplot(Recolte_foret, aes(x = feuillus, y =survie_larve, color = stade)) +
+ggplot(Recolte_foret, aes(x = feuillus, y =survie_clean, color = stade)) +
+  #geom_point() +
+  geom_smooth(method = "glm", method.args = list(family = "binomial"))
+
+ggplot(Recolte_foret_2025, aes(x = feuillus, y =survie_larve, color = stade)) +
+  #geom_point() +
+  geom_smooth(method = "glm", method.args = list(family = "binomial"))
+
+ggplot(Recolte_foret_2026, aes(x = feuillus, y =survie_larve, color = stade)) +
   #geom_point() +
   geom_smooth(method = "glm", method.args = list(family = "binomial"))
 
@@ -37,10 +63,19 @@ ggplot(Recolte_foret, aes(x = pheno.c, y =survie_larve, color = stade)) +
   #facet_wrap(~stade)+
   geom_smooth(method = "glm", method.args = list(family = "binomial"))
 
+ggplot(Recolte_foret_2025, aes(x = pheno.c, y =survie_larve, color = stade)) +
+  #geom_point() +
+  #facet_wrap(~stade)+
+  geom_smooth(method = "glm", method.args = list(family = "binomial"))
+
+ggplot(Recolte_foret_2026, aes(x = pheno.c, y =survie_larve, color = stade)) +
+  #geom_point() +
+  #facet_wrap(~stade)+
+  geom_smooth(method = "glm", method.args = list(family = "binomial"))
 
 ## 2) Feuillus and pres_ptoid ----
   
-  ggplot(Recolte_foret, aes(x = feuillus, y = pres_ptoid)) +
+  ggplot(Recolte_foret, aes(x = feuillus, y = pres_ptoid_clean)) +
   geom_point(alpha = 0.3, position = position_jitter(height = 0.05)) +
   geom_smooth(method = "glm", method.args = list(family = "binomial"), 
               se = TRUE, color = "#0072B2", size = 1.2) +
@@ -49,7 +84,48 @@ ggplot(Recolte_foret, aes(x = pheno.c, y =survie_larve, color = stade)) +
     x = "% de feuillus",
     y = "Probabilité de parasitisme"
   ) +
-  theme_minimal()
+  theme_minimal()+
+  theme(
+    panel.grid = element_blank(),
+    axis.line = element_line(color = "black"),
+    axis.ticks = element_line(color = "black"),
+    axis.ticks.length = unit(0.15, "cm")
+  )
+
+ggplot(Recolte_foret_2025, aes(x = feuillus, y = pres_ptoid)) +
+  geom_point(alpha = 0.3, position = position_jitter(height = 0.05)) +
+  geom_smooth(method = "glm", method.args = list(family = "binomial"), 
+              se = TRUE, color = "#0072B2", size = 1.2) +
+  labs(
+    title = "Effet du % de feuillus sur la probabilité de présence de parasitoïde",
+    x = "% de feuillus",
+    y = "Probabilité de parasitisme"
+  ) +
+  theme_minimal()+ 
+  theme(
+    panel.grid = element_blank(),
+    axis.line = element_line(color = "black"),
+    axis.ticks = element_line(color = "black"),
+    axis.ticks.length = unit(0.15, "cm")
+  )
+
+ggplot(Recolte_foret_2026, aes(x = feuillus, y = pres_ptoid_clean)) +
+  geom_point(alpha = 0.3, position = position_jitter(height = 0.05)) +
+  geom_smooth(method = "glm", method.args = list(family = "binomial"), 
+              se = TRUE, color = "#0072B2", size = 1.2) +
+  labs(
+    title = "Effet du % de feuillus sur la probabilité de présence de parasitoïde",
+    x = "% de feuillus",
+    y = "Probabilité de parasitisme"
+  ) +
+  theme_minimal()+
+  theme(
+    panel.grid = element_blank(),
+    axis.line = element_line(color = "black"),
+    axis.ticks = element_line(color = "black"),
+    axis.ticks.length = unit(0.15, "cm")
+  )
+
 
 ## 2.1) By pheno
 
@@ -57,9 +133,25 @@ ggplot(Recolte_foret, aes(x = feuillus, y = pres_ptoid, color = factor(pheno.c))
   #geom_point() +
   geom_smooth(method = "glm", method.args = list(family = "binomial"))
 
+ggplot(Recolte_foret_2025, aes(x = feuillus, y = pres_ptoid, color = factor(pheno.c))) +
+  #geom_point() +
+  geom_smooth(method = "glm", method.args = list(family = "binomial"))
+
+ggplot(Recolte_foret_2026, aes(x = feuillus, y = pres_ptoid, color = factor(pheno.c))) +
+  #geom_point() +
+  geom_smooth(method = "glm", method.args = list(family = "binomial"))
+
 ## 1.2) By larval stages
 
 ggplot(Recolte_foret, aes(x = feuillus, y =pres_ptoid, color = stade)) +
+  #geom_point() +
+  geom_smooth(method = "glm", method.args = list(family = "binomial"))
+
+ggplot(Recolte_foret_2025, aes(x = feuillus, y =pres_ptoid, color = stade)) +
+  #geom_point() +
+  geom_smooth(method = "glm", method.args = list(family = "binomial"))
+
+ggplot(Recolte_foret_2026, aes(x = feuillus, y =pres_ptoid, color = stade)) +
   #geom_point() +
   geom_smooth(method = "glm", method.args = list(family = "binomial"))
 
@@ -70,7 +162,17 @@ ggplot(Recolte_foret, aes(x = pheno.c, y =pres_ptoid, color = stade)) +
   #facet_wrap(~stade)+
   geom_smooth(method = "glm", method.args = list(family = "binomial"))
 
-# First signs of non-linearity. Each stages of pheno.c also corresponds to a date
+ggplot(Recolte_foret_2025, aes(x = pheno.c, y =pres_ptoid, color = stade)) +
+  #geom_point() +
+  #facet_wrap(~stade)+
+  geom_smooth(method = "glm", method.args = list(family = "binomial"))
+
+ggplot(Recolte_foret_2026, aes(x = pheno.c, y =pres_ptoid_clean, color = stade)) +
+  #geom_point() +
+  #facet_wrap(~stade)+
+  geom_smooth(method = "glm", method.args = list(family = "binomial"))
+
+# First signs of non-linearity. Each stages of pheno.c also corresponds to a date 
 # in time. Let's look at it like that
 
 ## 3) Pres_ptoid/survival in time (date_pose.c) ----
@@ -84,9 +186,15 @@ ggplot(Recolte_foret, aes(x = pheno.c, y =pres_ptoid, color = stade)) +
 ggplot(Recolte_foret, aes(x=date_pose.c, y = pres_ptoid)) +
   geom_smooth()
 
+ggplot(Recolte_foret_2025, aes(x=date_pose.c, y = pres_ptoid)) +
+  geom_smooth()
+
+ggplot(Recolte_foret_2026, aes(x=date_pose.c, y = pres_ptoid)) +
+  geom_smooth()
+
 ## Very clearly not linear, this is expected for parastitoid presence. Seasonal
 ## abundance should fluctuate like this. Seems like we cover most, if not all,
-## of pres_ptoid during that period. 
+## of pres_ptoid during that period. 2026 pretty wierd, maybe rain is at fault?
 
 ## 3.1) Survival and pres_ptoid with second degree term
 
@@ -94,10 +202,26 @@ ggplot(Recolte_foret, aes(x=date_pose.c, y = pres_ptoid))+
   geom_smooth(formula = y ~ poly(x,2), method = "gam",
               method.args = list(family = "binomial" ))
 
-# Clear date when larvae are more likely to be parasitized
+ggplot(Recolte_foret_2025, aes(x=date_pose.c, y = pres_ptoid))+
+  geom_smooth(formula = y ~ poly(x,2), method = "gam",
+              method.args = list(family = "binomial" ))
+
+ggplot(Recolte_foret_2026, aes(x=date_pose.c, y = pres_ptoid))+
+  geom_smooth(formula = y ~ poly(x,4), method = "gam",
+              method.args = list(family = "binomial" ))
+
+# Clear date when larvae are more likely to be parasitized for 2025, 2026 two peaks?
 
 ggplot(Recolte_foret, aes(x=date_pose.c, y = survie_larve))+
   geom_smooth(formula = y ~ poly(x,2), method = "gam", 
+              method.args = list(family = "binomial" ))
+
+ggplot(Recolte_foret_2025, aes(x=date_pose.c, y = survie_larve))+
+  geom_smooth(formula = y ~ poly(x,4), method = "gam", 
+              method.args = list(family = "binomial" ))
+
+ggplot(Recolte_foret_2026, aes(x=date_pose.c, y = survie_larve))+
+  geom_smooth(formula = y ~ poly(x,4), method = "gam", 
               method.args = list(family = "binomial" ))
 
 ## 3.2) Cutting it down by stages
@@ -105,11 +229,23 @@ ggplot(Recolte_foret, aes(x=date_pose.c, y = survie_larve))+
 ggplot(Recolte_foret, aes(x=date_pose.c, y = pres_ptoid, color = as.factor(stade.c)))+
   geom_smooth(method = "gam", formula = y ~ poly(x,2))
 
+ggplot(Recolte_foret_2025, aes(x=date_pose.c, y = pres_ptoid, color = as.factor(stade.c)))+
+  geom_smooth(method = "gam", formula = y ~ poly(x,2))
+
+ggplot(Recolte_foret_2026, aes(x=date_pose.c, y = pres_ptoid, color = as.factor(stade.c)))+
+  geom_smooth(method = "gam", formula = y ~ poly(x,2))
+
 # interesting, seems like stages L4 and L6 might no be so much non-linear but,
 # stage L5 which covers The peak (and decline) of parasitoid presence shows non-
 # linarity
 
 ggplot(Recolte_foret, aes(x=date_pose.c, y = survie_larve, color = as.factor(stade.c)))+
+  geom_smooth(method = "gam", formula = y ~ poly(x,2))
+
+ggplot(Recolte_foret_2025, aes(x=date_pose.c, y = survie_larve, color = as.factor(stade.c)))+
+  geom_smooth(method = "gam", formula = y ~ poly(x,2))
+
+ggplot(Recolte_foret_2026, aes(x=date_pose.c, y = survie_clean, color = as.factor(stade.c)))+
   geom_smooth(method = "gam", formula = y ~ poly(x,2))
 
 # Relatively similar relation with survival, except that  early L5 seamed to survive
@@ -137,7 +273,7 @@ Recolte_foret %>%
 
 ## 4.1) Phenology of the two main ptoids
 
-Recolte_foret_clean %>%
+Recolte_foret %>%
   filter(id_ptoid %in% c("Tranosema rostrale", "Phytodietus sp.")) %>%
   mutate(id_ptoid = factor(as.character(id_ptoid))) %>%
   count(date_pose.c, id_ptoid) %>%
@@ -147,5 +283,11 @@ Recolte_foret_clean %>%
   #geom_smooth(se = FALSE) +
   theme_minimal() +
   labs(y = "Abundance (count)", x = "Date",
-       color = "Parasitoid species", fill = "Parasitoid species")
+       color = "Parasitoid species", fill = "Parasitoid species")+
+  theme(
+    panel.grid = element_blank(),
+    axis.line = element_line(color = "black"),
+    axis.ticks = element_line(color = "black"),
+    axis.ticks.length = unit(0.15, "cm")
+  )
 

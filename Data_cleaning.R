@@ -37,6 +37,8 @@
 #install.packages("MuMIn")
 #install.packages("MetBrewer")
 #install.packages("viridis")
+#install.packages("vegan")
+library(vegan)
 library(viridis)
 library(MetBrewer)
 library(haven)
@@ -249,109 +251,12 @@ Lepidop_host[-1] <- lapply(Lepidop_host[-1], function(x) {
 })
 
 ## Importing BIOSIM data in R ----
+## (This is the date data from after field season for 2025 and 2026. We used different dates
+## then these ones to do the study)
 
-# First tried with analysis in BIOSIM, wasn't sure of the results, confirmed by hand
-# that the results I got didn't fit what I needed, so do it in R with the 
-# entire dataset
-
-#BIOSIM_2025_EARLY = read_csv("TBE_2025_95.csv")
-#BIOSIM_2025_PEAK = read.csv("TBE_2025_50.csv")
-#BIOSIM_2025_LATE = read.csv("TBE_2025_5.csv")
-
-#Drawback is this is a really big dataset
-
-#BIOSIM_FULL = read.csv("FULL_DATA_2025_2026.csv")
-
-## Transforming into DOY 
-
-BIOSIM_FULL <- BIOSIM_FULL %>%
-  mutate(
-    date = make_date(Year, Month, Day),
-    DOY = yday(date)
-  )
-
-#Df for Estimating real date for 2025 and each phenological scenario
-
-BIOSIM_2025 <- BIOSIM_FULL %>%
-  filter(Year == 2025)
-
-#Create function to get specific quantile (0.05, 0.5, 0.95) ----
-
-get_doy_pheno <- function(data, stage_larve, pheno) {
-  data %>%
-    arrange(date) %>% 
-    mutate(
-      cum = cumsum(.data[[stage_larve]]),
-      pct = cum / sum(.data[[stage_larve]], na.rm = TRUE)
-    ) %>%
-    filter(pct >= pheno) %>%
-    slice(1) %>%
-    pull(DOY)
-}
-
-# Apply function
-
-stage_larve <- c("L4", "L5", "L6", "Pupae")
-pheno <- c(EARLY = 0.05, PEAK = 0.50, LATE = 0.95)
-
-PHENO_2025 <- expand.grid(stage_larve = stage_larve,
-                          stage = names(pheno)) %>%
-  rowwise() %>%
-  mutate(
-    DOY = get_doy_pheno(
-      BIOSIM_2025,
-      as.character(stage_larve),
-      pheno[as.character(stage)]
-    )
-  ) %>%
-  ungroup()
-
-## Same thing but by parcels
-
-PHENO_ALL <- BIOSIM_FULL %>%
-  group_by(Year, Name) %>%
-  group_modify(~ {
-    
-    data_parcelle <- .x %>% arrange(date)
-    
-    expand_grid(stage_larve = stage_larve,
-                stage = names(pheno)) %>%
-      mutate(
-        DOY = map2_dbl(stage_larve, stage,
-                       ~ get_doy_pheno(data_parcelle, .x, pheno[.y]))
-      )
-  }) %>%
-  ungroup()
-
-## Predicted date for 2026 ----
-
-BIOSIM_2026 = BIOSIM_FULL %>%
-  filter(Year == 2026)
-
-# Apply function
-
-PHENO_2026 <- expand.grid(stage_larve = stage_larve,
-                          stage = names(pheno)) %>%
-  rowwise() %>%
-  mutate(
-    DOY = get_doy_pheno(
-      BIOSIM_2026,
-      as.character(stage_larve),
-      pheno[as.character(stage)]
-    )
-  ) %>%
-  ungroup()
-
-#EARLY_L4 <- BIOSIM_2025 %>%
-#  arrange(date) %>%
-#  mutate(
-#    cum_L4 = cumsum(L4),
-#    pct_L4 = cum_L4 / sum(L4, na.rm = TRUE)
-#  ) %>%
-#  filter(pct_L4 >= 0.05) %>%
-#  slice(1) %>%
-#  pull(DOY)
-
+BIOSIM_EARLY = read_csv("5.csv")
+BIOSIM_PEAK = read.csv("50.csv")
+BIOSIM_LATE = read.csv("95.csv")
 
 ## DHP * Adundance for biomass/site
 # With mean DHP/species and general site composition in %

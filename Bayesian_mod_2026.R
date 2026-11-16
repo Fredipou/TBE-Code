@@ -6,6 +6,7 @@ data_nopupe$parcelle <- factor(data_nopupe$parcelle)
 data_nopupe_2025$parcelle = factor(data_nopupe_2025$parcelle)
 data_nopupe_2026$parcelle = factor(data_nopupe_2026$parcelle)
 
+
 # Change la valeur de pheno.c à -2, 0 et 2 pour mieux représenter l'écart avec le trait
 
 data_nopupe <- data_nopupe %>%
@@ -24,17 +25,20 @@ data_nopupe_2026 <- data_nopupe_2026 %>%
 
 # First model, without rain and biomass index ----
 
-# Priors
-
 priors <- c(
   prior(normal(0, 2), class = "b"),                 # feuillus, annee_factor2026
   prior(student_t(3, 0, 2.5), class = "Intercept"),  
   prior(student_t(3, 0, 2.5), class = "sds", lb = 0) 
 )
 
+#Saved model
+
+gamm_ptoid_main_bayes <- readRDS("gamm_ptoid_main_bayes.rds")
+
 gamm_ptoid_main_bayes <- brm(
   pres_ptoid ~ feuillus +
     annee +
+    feuillus+
     s(date_pose.c, by = annee, k = 12) + 
     (1|parcelle), 
   family = bernoulli(link = "logit"),  
@@ -50,7 +54,7 @@ gamm_ptoid_main_bayes <- brm(
 #summary(gamm_ptoid_main_bayes)
 #saveRDS(gamm_ptoid_main_bayes, file = "gamm_ptoid_main_bayes.rds")
 #get_prior(gamm_ptoid_main_bayes)
-gamm_ptoid_main_bayes <- readRDS("gamm_ptoid_main_bayes.rds")
+#gamm_ptoid_main_bayes <- readRDS("gamm_ptoid_main_bayes.rds")
 
 # Effets fixes négatifs et signif de année 2026, feuillus. Grande incertitude pour l'année 2026. 
 # Effet aléatoire presque signif
@@ -58,6 +62,76 @@ gamm_ptoid_main_bayes <- readRDS("gamm_ptoid_main_bayes.rds")
 #plot(gamm_ptoid_main_bayes)
 #pp_check(priors) #looks good
 #epred_draws(gamm_ptoid_main_bayes)
+
+# Modèle avec intéraction année x feuillus
+
+ptoid_main_interaction <- readRDS("ptoid_main_interaction.rds")
+
+ptoid_main_interaction <- brm(
+  pres_ptoid ~ feuillus * annee +
+    s(date_pose.c, by = annee, k = 12) +
+    (1 | parcelle),
+  family = bernoulli(link = "logit"),
+  data = data_nopupe,
+  chains = 4, iter = 4000, warmup = 1000, cores = 4, seed = 123,
+  control = list(adapt_delta = 0.99, max_treedepth = 15)
+)
+#hypothesis(ptoid_main_interaction, "feuillus:annee2026 > 0")
+#summary(ptoid_main_interaction)
+#saveRDS(ptoid_main_interaction, file = "ptoid_main_interaction.rds")
+
+#ptoid_main_interaction <- readRDS("ptoid_main_interaction.rds")
+#plot(ptoid_main_interaction)
+#pp_check(ptoid_main_interaction)
+#hypothesis(ptoid_main_interaction, "feuillus:annee2026 > 0")
+#Le couvert feuillu réduit le parasitisme en 2025, mais cet effet disparaît en 2026 (−0.02 + 0.02 ≈ 0). 
+#La différence entre les années est soutenue. Avec les données complètes 2026, je crois que ce
+# modèle devrait être prioriser
+
+## Vérification entre les deux modèles
+
+#ptoid_main_interaction <- add_criterion(ptoid_main_interaction, "loo")
+#gamm_ptoid_main_bayes  <- add_criterion(gamm_ptoid_main_bayes, "loo")
+#loo_compare(ptoid_main_interaction, gamm_ptoid_main_bayes)
+
+## Modele avec une autre intéraction aléatoire parcelle:annee
+
+ptoid_main_interaction_2 <- brm(
+  pres_ptoid ~ feuillus * annee +
+    s(date_pose.c, by = annee, k = 12) +
+    (1 | parcelle) +
+    (1 | parcelle:annee),
+  family = bernoulli(link = "logit"),
+  data = data_nopupe,
+  chains = 4, iter = 4000, warmup = 1000, cores = 4, seed = 123,
+  control = list(adapt_delta = 0.99, max_treedepth = 15)
+)
+summary(ptoid_main_interaction_2)
+saveRDS(ptoid_main_interaction_2, "ptoid_main_interaction_2.rds")
+
+ptoid_main_interaction   <- add_criterion(ptoid_main_interaction, "loo")
+ptoid_main_interaction_2 <- add_criterion(ptoid_main_interaction_2, "loo")
+loo_compare(ptoid_main_interaction, ptoid_main_interaction_2)
+
+# Sans premiere interaction et compare les trois
+ptoid_main_interaction_3 = readRDS("ptoid_main_interaction_3.RDS")
+
+ptoid_main_interaction_3 <- brm(
+  pres_ptoid ~ feuillus * annee +
+    s(date_pose.c, by = annee, k = 12) +
+    (1 | parcelle:annee),
+  family = bernoulli(link = "logit"),
+  data = data_nopupe,
+  chains = 4, iter = 4000, warmup = 1000, cores = 4, seed = 123,
+  control = list(adapt_delta = 0.99, max_treedepth = 15)
+)
+#saveRDS(ptoid_main_interaction_3, "ptoid_main_interaction_3.rds")
+#summary(ptoid_main_interaction_3)
+#ptoid_main_interaction_3 <- add_criterion(ptoid_main_interaction_3, "loo")
+#loo_compare(ptoid_main_interaction, ptoid_main_interaction_2, ptoid_main_interaction_3)
+#loo(ptoid_main_interaction_3)
+
+
 
 ## Survie cumulative 2025 & 2026 ----
 
@@ -90,26 +164,27 @@ prediction_data_2025 <- expand.grid(
 
 prediction_data_2026 <- expand.grid(
   date_pose.c = c(147, 156, 168,   # early
-                  154, 164, 170,   # peak
-                  161, 175, 182)   # late
+                  154, 163, 175,   # peak
+                  161, 170, 182)   # late
 ) %>%
   mutate(
     pheno.c = case_when(
       date_pose.c %in% c(147, 156, 168) ~ "early",
-      date_pose.c %in% c(154, 164, 170) ~ "peak",
-      date_pose.c %in% c(161, 175, 182) ~ "late"
+      date_pose.c %in% c(154, 163, 175) ~ "peak",
+      date_pose.c %in% c(161, 170, 182) ~ "late"
     ),
     stage_date = case_when(
       date_pose.c %in% c(147, 154, 161) ~ "L4",
-      date_pose.c %in% c(156, 164, 175) ~ "L5",
-      date_pose.c %in% c(168, 170, 182) ~ "L6"
+      date_pose.c %in% c(156, 163, 170) ~ "L5",
+      date_pose.c %in% c(168, 175, 182) ~ "L6"
     ),
     pheno.c  = factor(pheno.c, levels = c("early", "peak", "late")),
     feuillus = mean(data_nopupe$feuillus, na.rm = TRUE), #couvert feuillus moyen 33%
     annee    = factor("2026", levels = levels(data_nopupe$annee))
   )
 
-#2) utiliser predictions de marginal effetcs Parcelle = 33% fixe pour effet au niveau
+
+#2) utiliser predictions de marginal effects Parcelle = 33% fixe pour effet au niveau
 # population
 
 prediction_data_2025 <- prediction_data_2025 %>%
@@ -120,7 +195,7 @@ prediction_data_2026 <- prediction_data_2026 %>%
 
 # Prédictions 2025
 
-preds_bayes_2025 <- predictions(gamm_ptoid_main_bayes, newdata = prediction_data_2025,
+preds_bayes_2025 <- predictions(ptoid_main_interaction, newdata = prediction_data_2025,
                                 re_formula = NA, type = "response") #on veut chiffre entre 0 et 1
 preds_draws_2025 <- get_draws(preds_bayes_2025)
 
@@ -133,19 +208,11 @@ survie_bayes_2025 <- preds_draws_2025 %>%
             survie_lwr = quantile(surv_prod, 0.025),
             survie_upr = quantile(surv_prod, 0.975), .groups = "drop")
 
-## Vérification des tirages
-
-#nrow(preds_draws_2025)  # devrait être 9 * 12000 = 108000
-#names(preds_draws_2025)  # confirme la présence de "draw", "drawid", "pheno.c", "stage_date"
-#length(unique(preds_draws_2025$drawid))  # devrait être 12000
-#class(preds_bayes_2025)  # objet "predictions" de marginaleffects
-#nrow(preds_bayes_2025)  # devrait être 9 lignes de base (avant get_draws), une par combinaison
-#prediction_data_2025 %>% count(pheno.c)          # devrait montrer 3 partout
-#prediction_data_2025 %>% count(pheno.c, stage_date) 
+survie_bayes_2025
 
 # Prédictions 2026
 
-preds_bayes_2026 <- predictions(gamm_ptoid_main_bayes, newdata = prediction_data_2026,
+preds_bayes_2026 <- predictions(ptoid_main_interaction, newdata = prediction_data_2026,
                                 re_formula = NA, type = "response")
 preds_draws_2026 <- get_draws(preds_bayes_2026)
 
@@ -191,11 +258,11 @@ grille_continue_2026 <- data.frame(
     parcelle = factor(levels(data_nopupe$parcelle)[1], levels = levels(data_nopupe$parcelle))
   )
 
-preds_continue_2025 <- predictions(gamm_ptoid_main_bayes, newdata = grille_continue_2025,
+preds_continue_2025 <- predictions(ptoid_main_interaction, newdata = grille_continue_2025,
                                    re_formula = NA, type = "response") %>%
   mutate(survie = 1 - estimate, survie_lwr = 1 - conf.high, survie_upr = 1 - conf.low, annee = "2025")
 
-preds_continue_2026 <- predictions(gamm_ptoid_main_bayes, newdata = grille_continue_2026,
+preds_continue_2026 <- predictions(ptoid_main_interaction, newdata = grille_continue_2026,
                                    re_formula = NA, type = "response") %>%
   mutate(survie = 1 - estimate, survie_lwr = 1 - conf.high, survie_upr = 1 - conf.low, annee = "2026")
 
@@ -265,7 +332,13 @@ ggplot() +
     y = "Probabilité de survie",
     title = "Validation du modèle : survie prédite (courbe) vs observée (par date réelle)"
   ) +
-  theme_bw()
+  theme_bw()+
+  theme(
+    panel.grid = element_blank(),
+    axis.line = element_line(color = "black"),
+    axis.ticks = element_line(color = "black"),
+    axis.ticks.length = unit(0.15, "cm")
+  )
 
 
 ## D'accord, on peut voir que le modèle prédit beaucoup mieux l'année 2025 que 2026
@@ -287,27 +360,12 @@ log_surv_draws_2026 <- preds_draws_2026 %>%
   mutate(log_surv = log(surv_prod), annee = "2026")
 
 log_surv_draws_all <- bind_rows(log_surv_draws_2025, log_surv_draws_2026)
-log_surv_draws_all
-
-#Vérifications
-#sum(is.infinite(log_surv_draws_all$log_surv))  # devrait être 0
-#sum(log_surv_draws_all$surv_prod == 0)  # devrait être 0
-#range(log_surv_draws_all$log_surv)  # Étendue des valeurs (en log)
-
-#Sous-echantillons les draws pour ne pas crash mon ordi.
-
-## Recalculer avec pheno_num, garder surv_prod (pas besoin de log_surv séparé)
 
 surv_all_num <- log_surv_draws_all %>%
-  mutate(
-    pheno_num = case_when(
-      pheno.c == "early" ~ -2,
-      pheno.c == "peak"  ~ 0,
-      pheno.c == "late"  ~ 2
-    )
-  )
+  mutate(pheno_num = case_when(pheno.c == "early" ~ -2,
+                               pheno.c == "peak"  ~  0,
+                               pheno.c == "late"  ~  2))
 
-## Sous-échantillon (~200 tirages)
 set.seed(123)
 sample_draws_200 <- surv_all_num %>%
   distinct(annee, drawid) %>%
@@ -318,121 +376,54 @@ sample_draws_200 <- surv_all_num %>%
 surv_subset_200 <- surv_all_num %>%
   semi_join(sample_draws_200, by = c("annee", "drawid"))
 
-ggplot(surv_all_num, aes(x = pheno_num, y = surv_prod, color = annee, fill = annee)) +
-  geom_line(data = surv_subset_200, aes(group = drawid), alpha = 0.08) +
-  geom_smooth(method = "lm", formula = y ~ x + I(x^2), alpha = 0.15, linewidth = 1.1) +
-  scale_color_viridis_d(end = 0.8) +
-  scale_fill_viridis_d(end = 0.8) +
-  scale_x_continuous(
-    breaks = c(-2, -1, 0, 1, 2),
-    labels = c("-2\nEarly", "-1", "0\nPeak", "1", "2\nLate")
-  ) +
-  scale_y_continuous(
-    trans = "log",
-    breaks = scales::log_breaks(n = 5),
-    labels = scales::label_number(accuracy = 0.01)
-  ) +
+##  Parabole lisse par tirage, passant par les trois scénarios
+
+coefs_parabole_par_tirage <- surv_all_num %>%
+  select(annee, drawid, pheno.c, log_surv) %>%
+  pivot_wider(names_from = pheno.c, values_from = log_surv) %>%     # colonnes early, peak, late
+  mutate(b0 = peak,
+         b1 = (late - early) / 4,
+         b2 = (late + early - 2 * peak) / 8)
+
+pheno_num_seq <- seq(-2, 2, by = 0.05)
+
+courbes_lisses_par_tirage <- coefs_parabole_par_tirage %>%
+  crossing(pheno_num = pheno_num_seq) %>%
+  mutate(log_surv = b0 + b1 * pheno_num + b2 * pheno_num^2,
+         surv_prod = exp(log_surv))
+
+courbes_lisses_200 <- courbes_lisses_par_tirage %>%
+  semi_join(sample_draws_200, by = c("annee", "drawid"))
+
+courbe_moyenne_et_bande <- courbes_lisses_par_tirage %>%
+  group_by(annee, pheno_num) %>%
+  summarise(surv_moy = exp(mean(log_surv)),
+            surv_lwr = exp(quantile(log_surv, 0.025)),
+            surv_upr = exp(quantile(log_surv, 0.975)), .groups = "drop")
+
+## Figure
+
+cols_annee <- c("2025" = "#0072B2", "2026" = "#D55E00")
+
+ggplot() +
+  geom_ribbon(data = courbe_moyenne_et_bande,
+              aes(x = pheno_num, ymin = surv_lwr, ymax = surv_upr, fill = annee), alpha = 0.15) +
+  geom_line(data = courbes_lisses_200,
+            aes(x = pheno_num, y = surv_prod, group = interaction(annee, drawid), color = annee),
+            alpha = 0.08) +
+  geom_line(data = courbe_moyenne_et_bande,
+            aes(x = pheno_num, y = surv_moy, color = annee), linewidth = 1.3) +
+  scale_color_manual(values = cols_annee) +
+  scale_fill_manual(values = cols_annee) +
+  scale_x_continuous(breaks = c(-2, -1, 0, 1, 2),
+                     labels = c("-2\nEarly", "-1", "0\nPeak", "1", "2\nLate")) +
+  scale_y_continuous(trans = "log", breaks = scales::log_breaks(n = 5),
+                     labels = scales::label_number(accuracy = 0.01)) +
   annotation_logticks(sides = "l") +
-  labs(
-    x = "Phenological scenario",
-    y = "Mean larval survival",
-    color = "Year", fill = "Year",
-  ) +
+  labs(x = "Scénario phénologique", y = "Survie cumulative moyenne",
+       color = "Année", fill = "Année") +
   theme_bw() +
   theme(panel.grid = element_blank())
-
-# Figure 2: Même chose mais avec dates intermédiaires pour courbes plus smooth
-# Ce graphique est seulement esthétique!! et assume que une relation linéaire entre les points de
-# survie. Je le laisse dans le code juste car il est intéressant. La figure 1 est à prioriser
-
-# Fonction d'interpolation linéaire entre les 3 scénarios connus, par stade
-
-#interpolate_dates <- function(pheno_anchors, date_anchors, pheno_seq) {
-#  approx(x = pheno_anchors, y = date_anchors, xout = pheno_seq)$y
-#}
-
-#pheno_seq <- seq(-1, 1, by = 0.25)  # 9 points : -1, -0.75, ..., 0.75, 1
-
-# 2025 : dates ancrées par stade (L4, L5, L6) aux 3 scénarios (-1, 0, 1)
-#dates_2025 <- list(
-#  L4 = c(early = 141, peak = 150, late = 157),
-#  L5 = c(early = 148, peak = 155, late = 162),
-#  L6 = c(early = 164, peak = 171, late = 177)
-#)
-
-#prediction_data_2025_interp <- purrr::map_dfr(names(dates_2025), function(stage) {
-#  data.frame(
-#    stage_date = stage,
-#    pheno_num = pheno_seq,
-#    date_pose.c = interpolate_dates(c(-1, 0, 1), dates_2025[[stage]], pheno_seq)
-#  )
-#}) %>%
-#  mutate(
-#    feuillus = mean(data_nopupe$feuillus, na.rm = TRUE),
-#    annee = factor("2025", levels = levels(data_nopupe$annee)),
-#    parcelle = factor(levels(data_nopupe$parcelle)[1], levels = levels(data_nopupe$parcelle))
-#  )
-
-# 2026 : même logique
-#dates_2026 <- list(
- # L4 = c(early = 147, peak = 154, late = 161),
-#  L5 = c(early = 156, peak = 164, late = 175),
-#  L6 = c(early = 168, peak = 170, late = 182)
-#)
-#
-#prediction_data_2026_interp <- purrr::map_dfr(names(dates_2026), function(stage) {
-#  data.frame(
-#    stage_date = stage,
-#    pheno_num = pheno_seq,
-#    date_pose.c = interpolate_dates(c(-1, 0, 1), dates_2026[[stage]], pheno_seq)
-#  )
-#}) %>%
-#  mutate(
-#    feuillus = mean(data_nopupe$feuillus, na.rm = TRUE),
-#    annee = factor("2026", levels = levels(data_nopupe$annee)),
-#    parcelle = factor(levels(data_nopupe$parcelle)[1], levels = levels(data_nopupe$parcelle))
-#  )
-#
-#preds_bayes_2025_interp <- predictions(gamm_ptoid_main_bayes, newdata = prediction_data_2025_interp,
-#                                       re_formula = NA, type = "response")
-#preds_draws_2025_interp <- get_draws(preds_bayes_2025_interp)
-
-#log_surv_2025_interp <- preds_draws_2025_interp %>%
-#  mutate(surv = 1 - draw) %>%
-#  group_by(pheno_num, drawid) %>%
-#  summarise(surv_prod = prod(surv), .groups = "drop") %>%
-#  mutate(log_surv = log(surv_prod), annee = "2025")
-
-#preds_bayes_2026_interp <- predictions(gamm_ptoid_main_bayes, newdata = prediction_data_2026_interp,
-#                                       re_formula = NA, type = "response")
-#preds_draws_2026_interp <- get_draws(preds_bayes_2026_interp)
-
-#log_surv_2026_interp <- preds_draws_2026_interp %>%
-#  mutate(surv = 1 - draw) %>%
-#  group_by(pheno_num, drawid) %>%
-#  summarise(surv_prod = prod(surv), .groups = "drop") %>%
-#  mutate(log_surv = log(surv_prod), annee = "2026")
-
-#log_surv_all_interp <- bind_rows(log_surv_2025_interp, log_surv_2026_interp)
-#surv_all_interp <- log_surv_all_interp %>%
-#  mutate(surv_prod = exp(log_surv))
-
-#set.seed(123)
-#sample_draws <- sample(unique(log_surv_all_interp$drawid), 300)
-
-#log_surv_subset <- log_surv_all_interp %>%
- # filter(drawid %in% sample_draws)
-
-#ggplot(log_surv_subset, aes(x = pheno_num, y = log_surv, group = drawid, color = annee)) +
- # geom_line(alpha = 0.1) +
-#  stat_summary(aes(group = 1), fun = mean, geom = "line", 
- #              color = "black", linewidth = 1.2) +
-  #scale_color_viridis_d(end = 0.8, guide = "none") +
-  #scale_x_continuous(breaks = c(-1, 0, 1), labels = c("Early", "Peak", "Late")) +
-  #facet_wrap(~ annee) +
-  #labs(x = "Scénario phénologique", y = "log(survie)") +
-  #theme_cowplot() +
-  #panel_border()
 
 
 ## Sélection directionnel 2025 ----
@@ -470,9 +461,9 @@ selection_gradients_quad_2025 <- preds_draws_2025 %>%
   mutate(
     surv = 1 - draw,
     pheno_num = case_when(
-      pheno.c == "early" ~ -1, 
+      pheno.c == "early" ~ -2, 
       pheno.c == "peak"  ~ 0,
-      pheno.c == "late"  ~ 1
+      pheno.c == "late"  ~ 2
     )
   ) %>%
   group_by(drawid, pheno_num) %>%
@@ -557,8 +548,7 @@ gamma_summary_2026 <- selection_gradients_quad_2026 %>%
 
 gamma_summary_2026
 
-# Intervalle inclut 0 aussi et très large, signe positif mais trop incertain pour en conclure
-# quelque chose?
+# Intervalle inclut 0 aussi et très large
 
 ### Essai de quelques visualisations
 
@@ -579,115 +569,19 @@ gradient_summary <- bind_rows(
 ggplot(gradient_summary, aes(x = mean, y = interaction(gradient, annee), color = annee)) +
   geom_vline(xintercept = 0, linetype = "dashed", color = "grey50") +
   geom_pointrange(aes(xmin = lwr, xmax = upr), linewidth = 0.8, size = 0.8) +
-  scale_color_manual(values = c("2025" = "#2C5F7C", "2026" = "#D97B3F")) +
+  scale_color_manual(values = cols_annee) +
   labs(x = "Estimé du gradient de sélection", y = NULL, color = "Année") +
   theme_cowplot()
 
-## Figure: Approximation linéaire du gradient ----
+ggplot(gradient_summary, aes(x = mean, y = gradient, color = annee)) +
+  geom_vline(xintercept = 0, linetype = "dashed", color = "grey50") +
+  geom_pointrange(aes(xmin = lwr, xmax = upr),
+                  position = position_dodge(width = 0.5),
+                  linewidth = 0.8, size = 0.8) +
+  scale_color_manual(values = cols_annee) +
+  labs(x = "Estimé du gradient de sélection", y = NULL, color = "Année") +
+  theme_cowplot()
 
-fit_lines <- function(preds_draws, annee_label) {
-  preds_draws %>%
-    mutate(
-      surv = 1 - draw,
-      pheno_num = case_when(
-        pheno.c == "early" ~ -2,
-        pheno.c == "peak"  ~ 0,
-        pheno.c == "late"  ~ 2
-      )
-    ) %>%
-    group_by(drawid, pheno_num) %>%
-    summarise(surv_prod = prod(surv), .groups = "drop") %>%
-    mutate(log_surv = log(surv_prod)) %>%
-    group_by(drawid) %>%
-    summarise(
-      intercept = coef(lm(log_surv ~ pheno_num))[1],
-      beta      = coef(lm(log_surv ~ pheno_num))[2],
-      .groups = "drop"
-    ) %>%
-    mutate(annee = annee_label)
-}
-
-lines_2025 <- fit_lines(preds_draws_2025, "2025")
-lines_2026 <- fit_lines(preds_draws_2026, "2026")
-
-lines_all <- bind_rows(lines_2025, lines_2026)
-
-set.seed(123)
-n_lines_to_show <- 300  
-
-sampled_lines <- lines_all %>%
-  group_by(annee) %>%
-  slice_sample(n = n_lines_to_show) %>%
-  ungroup()
-
-pheno_grid <- seq(-2, 2, by = 0.1)
-
-lines_expanded <- sampled_lines %>%
-  rowwise() %>%
-  mutate(pheno_num = list(pheno_grid)) %>%
-  unnest(pheno_num) %>%
-  mutate(fitted = intercept + beta * pheno_num)
-
-mean_lines <- lines_all %>%
-  group_by(annee) %>%
-  summarise(intercept_mean = mean(intercept), beta_mean = mean(beta), .groups = "drop") %>%
-  rowwise() %>%
-  mutate(pheno_num = list(pheno_grid)) %>%
-  unnest(pheno_num) %>%
-  mutate(fitted = intercept_mean + beta_mean * pheno_num)
-
-# Préparer les points réels (moyennes + IC) pour superposition
-#points_reels <- log_surv_draws_all %>%
-#  mutate(pheno_num = case_when(
-#    pheno.c == "early" ~ -2,
-#    pheno.c == "peak"  ~ 0,
-#    pheno.c == "late"  ~ 2
-#  )) %>%
-#  group_by(annee, pheno_num) %>%
-#  summarise(
-#    log_surv_mean = mean(log_surv),
-#    log_surv_lwr = quantile(log_surv, 0.025),
-#    log_surv_upr = quantile(log_surv, 0.975),
-#    .groups = "drop"
-#  )
-surv_draws_2025 <- preds_draws_2025 %>%
-  mutate(surv = 1 - draw) %>%
-  group_by(pheno.c, drawid) %>%
-  summarise(surv_prod = prod(surv), .groups = "drop") %>%
-  mutate(annee = "2025")
-
-surv_draws_2026 <- preds_draws_2026 %>%
-  mutate(surv = 1 - draw) %>%
-  group_by(pheno.c, drawid) %>%
-  summarise(surv_prod = prod(surv), .groups = "drop") %>%
-  mutate(annee = "2026")
-
-surv_draws_all <- bind_rows(surv_draws_2025, surv_draws_2026)
-
-surv_draws_plot <- surv_draws_all %>%
-  mutate(pheno_num = case_when(
-    pheno.c == "early" ~ -2,
-    pheno.c == "peak"  ~ 0,
-    pheno.c == "late"  ~ 2
-  ))
-
-ggplot(surv_draws_plot, aes(x = pheno_num, y = surv_prod, color = annee, fill = annee)) +
-  geom_smooth(method = "lm", formula = y ~ x + I(x^2), alpha = 0.15, linewidth = 1.2) +
-  #geom_pointrange(data = points_reels_surv,
-  #                aes(x = pheno_num, y = survie_mean, ymin = survie_lwr, ymax = survie_upr),
-  #                size = 0.7) +
-  scale_color_viridis_d(end = 0.8) +
-  scale_fill_viridis_d(end = 0.8) +
-  scale_x_continuous(breaks = c(-2, 0, 2), labels = c("Early", "Peak", "Late")) +
-  scale_y_continuous(trans = "log") +
-  labs(
-    x = "Scénario phénologique",
-    y = "Probabilité de survie (échelle log)",
-    color = "Année", fill = "Année",
-    title = "Gradient de sélection quadratique : ajustement polynomial vs valeurs réelles"
-  ) +
-  theme_cowplot() +
-  panel_border()
 
 ## Prochaine étape
 ## Eassyer avec les années séparés en brms pour isoler l'effet annuelle sur l'environnement, prendre les extrèmes
@@ -700,6 +594,10 @@ ggplot(surv_draws_plot, aes(x = pheno_num, y = surv_prod, color = annee, fill = 
 ## Autres Modèles Bayesiens ----
 
 ## Modèles séparés par années
+
+#Plus utilisé maintenant car année prise en compte dans le modèle
+#Modèle 2025
+ptoid_main_2025 <- readRDS("ptoid_main_2025.rds")
 
 ptoid_main_2025 <- brm(
   pres_ptoid ~ feuillus +
@@ -714,21 +612,18 @@ ptoid_main_2025 <- brm(
   seed = 123,
   control = list(adapt_delta = 0.99, max_treedepth = 15) #adapt_delta 0.99 car divergent transitions
 )
-summary(ptoid_main_2025)
+#summary(ptoid_main_2025)
 #saveRDS(ptoid_main_2025, file = "ptoid_main_2025.rds")
-ptoid_main_2025 <- readRDS("ptoid_main_2025.rds")
 #plot(ptoid_main_2025)
 #pp_check(ptoid_main_2025)
 
-#parcelle_ID <- unique(data_nopupe_2025$parcelle)
-#plot_predictions(ptoid_main_2025,
-#                 newdata = filter(data_nopupe_2025, parcelle %in% parcelle_ID[1:10]),
-#                 by = c("date_pose.c","parcelle")) +
-#  facet_wrap(~parcelle) +
-#  geom_point(data = filter(data_nopupe_2025, parcelle %in% parcelle_ID[1:10]),
-#             aes(x = date_pose.c, y = pres_ptoid)
+#Modele 2026
 
+#Plus utilisé maintenant car année prise en compte dans le modèle
 
+#ptoid_main_2026 <- readRDS("ptoid_main_2026.rds")
+
+ptoid_main_2026 <- readRDS("ptoid_main_2026.rds")
 ptoid_main_2026 <- brm(
   pres_ptoid ~ feuillus +
     s(date_pose.c, k = 6) + 
@@ -743,179 +638,11 @@ ptoid_main_2026 <- brm(
   control = list(adapt_delta = 0.99, max_treedepth = 15) #adapt_delta 0.99 car divergent transitions
 )
 
-summary(ptoid_main_2026)
+#summary(ptoid_main_2026)
 #saveRDS(ptoid_main_2026, file = "ptoid_main_2026.rds")
-ptoid_main_2026 <- readRDS("ptoid_main_2026.rds")
 #plot(ptoid_main_2026)
 #pp_check(ptoid_main_2026)
 
-# Dernier Modèle avec intéraction année x feuillus
-
-ptoid_main_interaction <- brm(
-  pres_ptoid ~ feuillus * annee +
-    s(date_pose.c, by = annee, k = 6) +
-    (1 | parcelle),
-  family = bernoulli(link = "logit"),
-  data = data_nopupe,
-  chains = 4, iter = 4000, warmup = 1000, cores = 4, seed = 123,
-  control = list(adapt_delta = 0.99, max_treedepth = 15)
-)
-
-#summary(ptoid_main_interaction)
-#saveRDS(ptoid_main_interaction, file = "ptoid_main_interaction.rds")
-#ptoid_main_interaction <- readRDS("ptoid_main_interaction.rds")
-#plot(ptoid_main_interaction)
-#pp_check(ptoid_main_interaction)
-
-
-#semble qu'il y ait une différence de l'effet de feuillus entre les années mais de peu.
-
-## Vérifications des données réelles vs prédites pour modèles séparés ----
-
-range_2025 <- range(data_nopupe_2025$date_pose.c, na.rm = TRUE)
-range_2026 <- range(data_nopupe_2026$date_pose.c, na.rm = TRUE)
-
-grille_continue_2025_sep <- data.frame(
-  date_pose.c = seq(range_2025[1], range_2025[2], length.out = 100)
-) %>%
-  mutate(
-    feuillus = mean(data_nopupe_2025$feuillus, na.rm = TRUE),
-    parcelle = factor(levels(data_nopupe_2025$parcelle)[1], levels = levels(data_nopupe_2025$parcelle))
-  )
-
-grille_continue_2026_sep <- data.frame(
-  date_pose.c = seq(range_2026[1], range_2026[2], length.out = 100)
-) %>%
-  mutate(
-    feuillus = mean(data_nopupe_2026$feuillus, na.rm = TRUE),
-    parcelle = factor(levels(data_nopupe_2026$parcelle)[1], levels = levels(data_nopupe_2026$parcelle))
-  )
-
-preds_continue_2025_sep <- predictions(ptoid_main_2025, newdata = grille_continue_2025_sep,
-                                       re_formula = NA, type = "response") %>%
-  mutate(survie = 1 - estimate, survie_lwr = 1 - conf.high, survie_upr = 1 - conf.low, annee = "2025")
-
-preds_continue_2026_sep <- predictions(ptoid_main_2026, newdata = grille_continue_2026_sep,
-                                       re_formula = NA, type = "response") %>%
-  mutate(survie = 1 - estimate, survie_lwr = 1 - conf.high, survie_upr = 1 - conf.low, annee = "2026")
-
-preds_continue_all_sep <- bind_rows(preds_continue_2025_sep, preds_continue_2026_sep)
-
-ggplot() +
-  geom_ribbon(data = preds_continue_all_sep, aes(x = date_pose.c, ymin = survie_lwr, ymax = survie_upr),
-              alpha = 0.15, fill = "steelblue") +
-  geom_line(data = preds_continue_all_sep, aes(x = date_pose.c, y = survie),
-            color = "steelblue", linewidth = 1) +
-  geom_pointrange(data = data_obs_all,
-                  aes(x = date_pose.c, y = survie_obs, ymin = survie_obs_lwr, ymax = survie_obs_upr,
-                      size = n),
-                  color = "black", alpha = 0.7) +
-  scale_size_continuous(range = c(0.3, 1.2), name = "n larves") +
-  facet_wrap(~ annee) +
-  labs(
-    x = "Date de déploiement (jour julien)",
-    y = "Probabilité de survie",
-    title = "Validation des modèles séparés par année : survie prédite vs observée"
-  ) +
-  theme_bw()
-
-## Figure: Date_pose.c en X, survie selon le scénarios phéno en y selon l'année ----
-
-# 1. Grille continue
-
-range_2025 <- range(data_nopupe_2025$date_pose.c, na.rm = TRUE)
-range_2026 <- range(data_nopupe_2026$date_pose.c, na.rm = TRUE)
-
-grille_continue_2025 <- data.frame(
-  date_pose.c = seq(range_2025[1], range_2025[2], length.out = 100)
-) %>%
-  mutate(
-    feuillus = mean(data_nopupe$feuillus, na.rm = TRUE),
-    annee = factor("2025", levels = levels(data_nopupe$annee)),
-    parcelle = factor(levels(data_nopupe$parcelle)[1], levels = levels(data_nopupe$parcelle))
-  )
-
-grille_continue_2026 <- data.frame(
-  date_pose.c = seq(range_2026[1], range_2026[2], length.out = 100)
-) %>%
-  mutate(
-    feuillus = mean(data_nopupe$feuillus, na.rm = TRUE),
-    annee = factor("2026", levels = levels(data_nopupe$annee)),
-    parcelle = factor(levels(data_nopupe$parcelle)[1], levels = levels(data_nopupe$parcelle))
-  )
-
-preds_continue_2025 <- predictions(gamm_ptoid_main_bayes, newdata = grille_continue_2025,
-                                   re_formula = NA, type = "response") %>%
-  mutate(survie = 1 - estimate, survie_lwr = 1 - conf.high, survie_upr = 1 - conf.low, annee = "2025")
-
-preds_continue_2026 <- predictions(gamm_ptoid_main_bayes, newdata = grille_continue_2026,
-                                   re_formula = NA, type = "response") %>%
-  mutate(survie = 1 - estimate, survie_lwr = 1 - conf.high, survie_upr = 1 - conf.low, annee = "2026")
-
-preds_continue_all <- bind_rows(preds_continue_2025, preds_continue_2026)
-
-##2. Réutiliser les prédictions déjà calculées pour les dates terrain (preds_bayes_2025/2026)
-
-points_terrain_2025 <- preds_bayes_2025 %>%
-  mutate(survie_pred = 1 - estimate,
-         survie_lwr = 1 - conf.high,
-         survie_upr = 1 - conf.low,
-         annee = "2025", source = "Terrain") %>%
-  select(date_pose.c, pheno.c, stage_date, annee, source, survie_pred, survie_lwr, survie_upr)
-
-points_terrain_2026 <- preds_bayes_2026 %>%
-  mutate(survie_pred = 1 - estimate,
-         survie_lwr = 1 - conf.high,
-         survie_upr = 1 - conf.low,
-         annee = "2026", source = "Terrain") %>%
-  select(date_pose.c, pheno.c, stage_date, annee, source, survie_pred, survie_lwr, survie_upr)
-
-## 3. Réutiliser les prédictions déjà calculées pour les dates BIOSIM (preds_bayes_2025_biosim/2026_biosim)
-
-points_biosim_2025 <- preds_bayes_2025_biosim %>%
-  mutate(survie_pred = 1 - estimate,
-         survie_lwr = 1 - conf.high,
-         survie_upr = 1 - conf.low,
-         annee = "2025", source = "BIOSIM") %>%
-  select(date_pose.c, pheno.c, stage_date, annee, source, survie_pred, survie_lwr, survie_upr)
-
-points_biosim_2026 <- preds_bayes_2026_biosim %>%
-  mutate(survie_pred = 1 - estimate,
-         survie_lwr = 1 - conf.high,
-         survie_upr = 1 - conf.low,
-         annee = "2026", source = "BIOSIM") %>%
-  select(date_pose.c, pheno.c, stage_date, annee, source, survie_pred, survie_lwr, survie_upr)
-
-points_combined <- bind_rows(points_terrain_2025, points_terrain_2026,
-                             points_biosim_2025, points_biosim_2026)
-
-## 4. Graphique
-
-library(ggrepel)
-
-ggplot() +
-  geom_ribbon(data = preds_continue_all, aes(x = date_pose.c, ymin = survie_lwr, ymax = survie_upr),
-              alpha = 0.15, fill = "steelblue") +
-  geom_line(data = preds_continue_all, aes(x = date_pose.c, y = survie),
-            color = "steelblue", linewidth = 1) +
-  geom_pointrange(data = points_combined, 
-                  aes(x = date_pose.c, y = survie_pred, ymin = survie_lwr, ymax = survie_upr,
-                      shape = source, color = source),
-                  size = 0.6) +
-  geom_text_repel(data = points_combined,
-                  aes(x = date_pose.c, y = survie_pred, label = stage_date, color = source),
-                  size = 3, fontface = "bold", show.legend = FALSE,
-                  min.segment.length = 0, seed = 123) +
-  facet_grid(annee ~ pheno.c) +
-  scale_color_okabe_ito()+
-  scale_color_manual(values = c(Terrain = "#2C5F7C", BIOSIM = "#D97B3F")) +
-  labs(
-    x = "Date de déploiement (jour julien)",
-    y = "Probabilité de survie prédite",
-    color = "Source des dates", shape = "Source des dates",
-    title = "Survie prédite : dates de terrain vs BIOSIM, par phénologie et année"
-  ) +
-  theme_bw()
 
 ## Selection Gradient/Feuillus ----
 
@@ -925,10 +652,10 @@ gradients_combined_Feuillus <- readRDS("gradients_combined_Feuillus.rds")
 
 #Just need to run the figure after this.
 
-# Grilles de dates
-
 grille_dates_2025 <- expand.grid(
-  date_pose.c = c(141, 148, 164, 150, 155, 171, 157, 162, 177)
+  date_pose.c = c(141, 148, 164,   # early (L4, L5, L6)
+                  150, 155, 171,   # peak
+                  157, 162, 177)   # late
 ) %>%
   mutate(
     pheno.c = case_when(
@@ -936,32 +663,40 @@ grille_dates_2025 <- expand.grid(
       date_pose.c %in% c(150, 155, 171) ~ "peak",
       date_pose.c %in% c(157, 162, 177) ~ "late"
     ),
-    pheno.c = factor(pheno.c, levels = c("early", "peak", "late")),
-    parcelle = factor(levels(data_nopupe_2025$parcelle)[1], levels = levels(data_nopupe_2025$parcelle))
+    pheno.c  = factor(pheno.c, levels = c("early", "peak", "late")),
+    parcelle = as.character(na.omit(data_nopupe$parcelle)[1])   # sans effet avec re_formula = NA
   )
 
 grille_dates_2026 <- expand.grid(
-  date_pose.c = c(147, 156, 168, 154, 164, 170, 161, 175, 182)
+  date_pose.c = c(147, 156, 168,   # early (L4, L5, L6)
+                  154, 163, 175,   # peak
+                  161, 170, 182)   # late
 ) %>%
   mutate(
     pheno.c = case_when(
       date_pose.c %in% c(147, 156, 168) ~ "early",
-      date_pose.c %in% c(154, 164, 170) ~ "peak",
-      date_pose.c %in% c(161, 175, 182) ~ "late"
+      date_pose.c %in% c(154, 163, 175) ~ "peak",
+      date_pose.c %in% c(161, 170, 182) ~ "late"
     ),
-    pheno.c = factor(pheno.c, levels = c("early", "peak", "late")),
-    parcelle = factor(levels(data_nopupe_2026$parcelle)[1], levels = levels(data_nopupe_2026$parcelle))
+    pheno.c  = factor(pheno.c, levels = c("early", "peak", "late")),
+    parcelle = as.character(na.omit(data_nopupe$parcelle)[1])
   )
 
 # Fonction : beta ET gamma, séquence continue de feuillus, re_formula = NA
 
-compute_gradients_NA_simple <- function(grille_dates, range_feuillus, modele, n_points = 30) {
+compute_gradients_NA_simple <- function(grille_dates, range_feuillus, modele, annee_label,
+                                        n_points = 30, ndraws = 2000) {
   
   feuillus_grid <- seq(range_feuillus[1], range_feuillus[2], length.out = n_points)
   
-  prediction_data <- map_dfr(feuillus_grid, function(f) grille_dates %>% mutate(feuillus = f))
+  prediction_data <- map_dfr(feuillus_grid, function(f) grille_dates %>% mutate(feuillus = f)) %>%
+    mutate(
+      annee    = factor(annee_label, levels = levels(data_nopupe$annee)),
+      parcelle = factor(levels(data_nopupe$parcelle)[1], levels = levels(data_nopupe$parcelle))  # sans effet avec re_formula = NA
+    )
   
-  preds_bayes <- predictions(modele, newdata = prediction_data, re_formula = NA, type = "response")
+  preds_bayes <- predictions(modele, newdata = prediction_data,
+                             re_formula = NA, type = "response", ndraws = ndraws)
   preds_draws <- get_draws(preds_bayes)
   
   base <- preds_draws %>%
@@ -995,492 +730,88 @@ compute_gradients_NA_simple <- function(grille_dates, range_feuillus, modele, n_
     summarise(mean = mean(gamma), lwr = quantile(gamma, 0.025), upr = quantile(gamma, 0.975), .groups = "drop") %>%
     mutate(gradient = "gamma")
   
-  bind_rows(beta_df, gamma_df)
+  bind_rows(beta_df, gamma_df) %>% mutate(annee = annee_label)
 }
+## Refaire figure avec Modèle Intéraction
 
-# Application
+# Même fonction, avec le modèle d'interaction
 
-range_feuillus_2025 <- range(data_nopupe_2025$feuillus, na.rm = TRUE)
-range_feuillus_2026 <- range(data_nopupe_2026$feuillus, na.rm = TRUE)
+gradients_int_2025 <- compute_gradients_NA_simple(
+  grille_dates_2025, range(data_nopupe_2025$feuillus, na.rm = TRUE),
+  ptoid_main_interaction, annee_label = "2025"
+)
 
-gradients_2025 <- compute_gradients_NA_simple(grille_dates_2025, range_feuillus_2025, ptoid_main_2025) %>%
-  mutate(annee = "2025")
+gradients_int_2026 <- compute_gradients_NA_simple(
+  grille_dates_2026, range(data_nopupe_2026$feuillus, na.rm = TRUE),
+  ptoid_main_interaction, annee_label = "2026"
+)
 
-gradients_2026 <- compute_gradients_NA_simple(grille_dates_2026, range_feuillus_2026, ptoid_main_2026) %>%
-  mutate(annee = "2026")
-
-gradients_combined_Feuillus <- bind_rows(gradients_2025, gradients_2026) %>%
+gradients_interaction <- bind_rows(gradients_int_2025, gradients_int_2026) %>%
   mutate(gradient = factor(gradient, levels = c("beta", "gamma"),
                            labels = c("β (directionnel)", "γ (quadratique)")))
 
-saveRDS(gradients_combined_Feuillus, file = "gradients_combined_Feuillus.rds")
+#saveRDS(gradients_interaction, "gradients_interaction.rds")
+gradients_interaction = readRDS("gradients_interaction.rds")
+
+
+# Application avec modèles séparés
+
+#range_feuillus_2025 <- range(data_nopupe_2025$feuillus, na.rm = TRUE)
+#range_feuillus_2026 <- range(data_nopupe_2026$feuillus, na.rm = TRUE)
+
+#gradients_2025 <- compute_gradients_NA_simple(grille_dates_2025, range_feuillus_2025, ptoid_main_interaction) %>%
+ # mutate(annee = "2025")
+
+#gradients_2026 <- compute_gradients_NA_simple(grille_dates_2026, range_feuillus_2026, ptoid_main_interaction) %>%
+ # mutate(annee = "2026")
+
+#gradients_combined_Feuillus <- bind_rows(gradients_2025, gradients_2026) %>%
+ # mutate(gradient = factor(gradient, levels = c("beta", "gamma"),
+  #                         labels = c("β (directionnel)", "γ (quadratique)")))
+
+#saveRDS(gradients_combined_Feuillus, file = "gradients_combined_Feuillus.rds")
 
 ## Visualisation Feuillus/Selection ----
 
-ggplot(gradients_combined_Feuillus, aes(x = feuillus, y = mean, color = annee, fill = annee)) +
-  geom_ribbon(aes(ymin = lwr, ymax = upr), alpha = 0.15, color = NA) +
-  geom_line(linewidth = 1.2) +
-  geom_hline(yintercept = 0, linetype = "dashed", color = "grey40") +
-  scale_color_viridis_d(end = 0.8) +
-  scale_fill_viridis_d(end = 0.8) +
-  facet_wrap(~ gradient, scales = "free_y") +
+  ggplot(gradients_interaction, aes(x = feuillus, y = mean, color = annee, fill = annee)) +
+    geom_ribbon(aes(ymin = lwr, ymax = upr), alpha = 0.2, color = NA) +
+    geom_line(linewidth = 1.2) +
+    geom_hline(yintercept = 0, linetype = "dashed", color = "grey40") +
+    scale_color_manual(values = cols_annee) +
+    scale_fill_manual(values = cols_annee) +
+    facet_wrap(~ gradient, scales = "free_y") +
   labs(
-    x = "% of Deciduous tree",
-    y = "Selection gradient",
-    color = "Year", fill = "Year"
+    x = "Proportion de feuillus (%)",
+    y = "Gradient de sélection",
+    color = "Année", fill = "Année"
   ) +
-  theme_minimal() +
-  theme(
-    panel.grid = element_blank(),
-    axis.line = element_line(color = "black"),
-    axis.ticks = element_line(color = "black"),
-    axis.ticks.length = unit(0.15, "cm")
-  )
-
-
-## Analysis with BIOSIM date ----
-
-# 1) Date sur le terrain
-
- # 2025
-#(141, 150, 157) ~ "L4"
-#(148, 155, 162) ~ "L5"
-#(164, 171, 177) ~ "L6"
-
- # 2026
-#(147, 154, 161) ~ "L4"
-#(156, 164, 175) ~ "L5"
-#(168, 170, 182) ~ "L6"
-
-
-# 2) Date BIOSIM (après saison)
-
- # 2025
-#(147, 153, 160) ~ "L4"
-#(153, 159, 168) ~ "L5"
-#(162, 171, 182) ~ "L6"
-
- # 2026
-#(145, 155, 166) ~ "L4"
-#(151, 162, 174) ~ "L5"
-#(163, 176, 190) ~ "L6"
-
-## ---- Dates BIOSIM (par stade, ordre early/peak/late)
-
-dates_2025_biosim <- list(
-  L4 = c(early = 147, peak = 153, late = 160),
-  L5 = c(early = 153, peak = 159, late = 168),
-  L6 = c(early = 162, peak = 171, late = 182)
-)
-
-dates_2026_biosim <- list(
-  L4 = c(early = 145, peak = 155, late = 166),
-  L5 = c(early = 151, peak = 162, late = 174),
-  L6 = c(early = 163, peak = 176, late = 190)
-)
-
-# Grille data
-
-grille_biosim <- function(dates_list, annee_label) {
-  purrr::map_dfr(names(dates_list), function(stage) {
-    data.frame(
-      stage_date = stage,
-      pheno.c = names(dates_list[[stage]]),
-      date_pose.c = unname(dates_list[[stage]])
+    theme_minimal() +
+    theme(
+      panel.grid = element_blank(),
+      axis.line = element_line(color = "black"),
+      axis.ticks = element_line(color = "black"),
+      axis.ticks.length = unit(0.15, "cm")
     )
-  }) %>%
-    mutate(
-      pheno.c  = factor(pheno.c, levels = c("early", "peak", "late")),
-      feuillus = mean(data_nopupe$feuillus, na.rm = TRUE),
-      annee    = factor(annee_label, levels = levels(data_nopupe$annee)),
-      parcelle = factor(levels(data_nopupe$parcelle)[1], levels = levels(data_nopupe$parcelle))
-    )
-}
 
-prediction_data_2025_biosim <- grille_biosim(dates_2025_biosim, "2025")
-prediction_data_2026_biosim <- grille_biosim(dates_2026_biosim, "2026")
-
-# Prédiction et survie cumulative
-
-preds_bayes_2025_biosim <- predictions(gamm_ptoid_main_bayes, newdata = prediction_data_2025_biosim,
-                                       re_formula = NA, type = "response")
-preds_draws_2025_biosim <- get_draws(preds_bayes_2025_biosim)
-
-survie_bayes_2025_biosim <- preds_draws_2025_biosim %>%
-  mutate(surv = 1 - draw) %>%
-  group_by(pheno.c, drawid) %>%
-  summarise(surv_prod = prod(surv), .groups = "drop") %>%
-  group_by(pheno.c) %>%
-  summarise(survie = mean(surv_prod),
-            survie_lwr = quantile(surv_prod, 0.025),
-            survie_upr = quantile(surv_prod, 0.975), .groups = "drop")
-
-survie_bayes_2025_biosim
-
-preds_bayes_2026_biosim <- predictions(gamm_ptoid_main_bayes, newdata = prediction_data_2026_biosim,
-                                       re_formula = NA, type = "response")
-preds_draws_2026_biosim <- get_draws(preds_bayes_2026_biosim)
-
-survie_bayes_2026_biosim <- preds_draws_2026_biosim %>%
-  mutate(surv = 1 - draw) %>%
-  group_by(pheno.c, drawid) %>%
-  summarise(surv_prod = prod(surv), .groups = "drop") %>%
-  group_by(pheno.c) %>%
-  summarise(survie = mean(surv_prod),
-            survie_lwr = quantile(surv_prod, 0.025),
-            survie_upr = quantile(surv_prod, 0.975), .groups = "drop")
-
-survie_bayes_2026_biosim
-
-calculer_gradients <- function(preds_draws) {
-  base <- preds_draws %>%
-    mutate(
-      surv = 1 - draw,
-      pheno_num = case_when(
-        pheno.c == "early" ~ -1,
-        pheno.c == "peak"  ~ 0,
-        pheno.c == "late"  ~ 1
-      )
-    ) %>%
-    group_by(drawid, pheno_num) %>%
-    summarise(surv_prod = prod(surv), .groups = "drop") %>%
-    mutate(log_surv = log(surv_prod))
+## Figure avec B seulement
   
-  beta_df <- base %>%
-    group_by(drawid) %>%
-    summarise(beta = coef(lm(log_surv ~ pheno_num))[2], .groups = "drop")
-  
-  gamma_df <- base %>%
-    group_by(drawid) %>%
-    summarise(
-      gamma_raw = coef(lm(log_surv ~ pheno_num + I(pheno_num^2)))[3],
-      gamma = 2 * gamma_raw,
-      .groups = "drop"
+  ggplot(gradients_interaction %>% filter(gradient == "β (directionnel)"),
+         aes(x = feuillus, y = mean, color = annee, fill = annee)) +
+    geom_ribbon(aes(ymin = lwr, ymax = upr), alpha = 0.2, color = NA) +
+    geom_line(linewidth = 1.2) +
+    geom_hline(yintercept = 0, linetype = "dashed", color = "grey40") +
+    scale_color_manual(values = cols_annee) +
+    scale_fill_manual(values = cols_annee) +
+    labs(
+      x = "Proportion de feuillus (%)",
+      y = "Gradient de sélection directionnel (β)",
+      color = "Année", fill = "Année"
+    ) +
+    theme_minimal() +
+    theme(
+      panel.grid = element_blank(),
+      axis.line = element_line(color = "black"),
+      axis.ticks = element_line(color = "black"),
+      axis.ticks.length = unit(0.15, "cm")
     )
   
-  list(beta = beta_df, gamma = gamma_df)
-}
-
-gradients_2025_biosim <- calculer_gradients(preds_draws_2025_biosim)
-gradients_2026_biosim <- calculer_gradients(preds_draws_2026_biosim)
-
-beta_summary_2025_biosim <- gradients_2025_biosim$beta %>%
-  summarise(beta_mean = mean(beta), beta_lwr = quantile(beta, 0.025), beta_upr = quantile(beta, 0.975))
-beta_summary_2025_biosim
-
-beta_summary_2026_biosim <- gradients_2026_biosim$beta %>%
-  summarise(beta_mean = mean(beta), beta_lwr = quantile(beta, 0.025), beta_upr = quantile(beta, 0.975))
-beta_summary_2026_biosim
-
-gamma_summary_2025_biosim <- gradients_2025_biosim$gamma %>%
-  summarise(gamma_mean = mean(gamma), gamma_lwr = quantile(gamma, 0.025), gamma_upr = quantile(gamma, 0.975))
-gamma_summary_2025_biosim
-
-gamma_summary_2026_biosim <- gradients_2026_biosim$gamma %>%
-  summarise(gamma_mean = mean(gamma), gamma_lwr = quantile(gamma, 0.025), gamma_upr = quantile(gamma, 0.975))
-gamma_summary_2026_biosim
-
-## Figures avec dates BIOSIM
-
-#1
-
-log_surv_draws_2025_biosim <- preds_draws_2025_biosim %>%
-  mutate(surv = 1 - draw) %>%
-  group_by(pheno.c, drawid) %>%
-  summarise(surv_prod = prod(surv), .groups = "drop") %>%
-  mutate(log_surv = log(surv_prod), annee = "2025")
-
-log_surv_draws_2026_biosim <- preds_draws_2026_biosim %>%
-  mutate(surv = 1 - draw) %>%
-  group_by(pheno.c, drawid) %>%
-  summarise(surv_prod = prod(surv), .groups = "drop") %>%
-  mutate(log_surv = log(surv_prod), annee = "2026")
-
-log_surv_draws_all_biosim <- bind_rows(log_surv_draws_2025_biosim, log_surv_draws_2026_biosim)
-
-ggplot(log_surv_draws_all_biosim, aes(x = pheno.c, y = log_surv, group = drawid)) +
-  geom_line(alpha = 0.02, color = "steelblue") +
-  stat_summary(aes(group = 1), fun = mean, geom = "line", 
-               color = "black", linewidth = 1.2) +
-  stat_summary(aes(group = 1), fun = mean, geom = "point", 
-               color = "black", size = 2) +
-  facet_wrap(~ annee) +
-  labs(
-    x = "Scénario phénologique",
-    y = "log(survie)",
-    title = "Survie face au parasitisme selon la phénologie (dates BIOSIM)"
-  ) +
-  theme_bw()
-
-# 2
-
-interpolate_dates <- function(pheno_anchors, date_anchors, pheno_seq) {
-  approx(x = pheno_anchors, y = date_anchors, xout = pheno_seq)$y
-}
-
-pheno_seq <- seq(-1, 1, by = 0.25)
-
-prediction_data_2025_interp_biosim <- purrr::map_dfr(names(dates_2025_biosim), function(stage) {
-  data.frame(
-    stage_date = stage,
-    pheno_num = pheno_seq,
-    date_pose.c = interpolate_dates(c(-1, 0, 1), dates_2025_biosim[[stage]], pheno_seq)
-  )
-}) %>%
-  mutate(
-    feuillus = mean(data_nopupe$feuillus, na.rm = TRUE),
-    annee = factor("2025", levels = levels(data_nopupe$annee)),
-    parcelle = factor(levels(data_nopupe$parcelle)[1], levels = levels(data_nopupe$parcelle))
-  )
-
-prediction_data_2026_interp_biosim <- purrr::map_dfr(names(dates_2026_biosim), function(stage) {
-  data.frame(
-    stage_date = stage,
-    pheno_num = pheno_seq,
-    date_pose.c = interpolate_dates(c(-1, 0, 1), dates_2026_biosim[[stage]], pheno_seq)
-  )
-}) %>%
-  mutate(
-    feuillus = mean(data_nopupe$feuillus, na.rm = TRUE),
-    annee = factor("2026", levels = levels(data_nopupe$annee)),
-    parcelle = factor(levels(data_nopupe$parcelle)[1], levels = levels(data_nopupe$parcelle))
-  )
-
-preds_bayes_2025_interp_biosim <- predictions(gamm_ptoid_main_bayes, newdata = prediction_data_2025_interp_biosim,
-                                              re_formula = NA, type = "response")
-preds_draws_2025_interp_biosim <- get_draws(preds_bayes_2025_interp_biosim)
-
-log_surv_2025_interp_biosim <- preds_draws_2025_interp_biosim %>%
-  mutate(surv = 1 - draw) %>%
-  group_by(pheno_num, drawid) %>%
-  summarise(surv_prod = prod(surv), .groups = "drop") %>%
-  mutate(log_surv = log(surv_prod), annee = "2025")
-
-preds_bayes_2026_interp_biosim <- predictions(gamm_ptoid_main_bayes, newdata = prediction_data_2026_interp_biosim,
-                                              re_formula = NA, type = "response")
-preds_draws_2026_interp_biosim <- get_draws(preds_bayes_2026_interp_biosim)
-
-log_surv_2026_interp_biosim <- preds_draws_2026_interp_biosim %>%
-  mutate(surv = 1 - draw) %>%
-  group_by(pheno_num, drawid) %>%
-  summarise(surv_prod = prod(surv), .groups = "drop") %>%
-  mutate(log_surv = log(surv_prod), annee = "2026")
-
-log_surv_all_interp_biosim <- bind_rows(log_surv_2025_interp_biosim, log_surv_2026_interp_biosim)
-
-set.seed(123)
-sample_draws_biosim <- sample(unique(log_surv_all_interp_biosim$drawid), 300)
-
-log_surv_subset_biosim <- log_surv_all_interp_biosim %>%
-  filter(drawid %in% sample_draws_biosim)
-
-ggplot(log_surv_subset_biosim, aes(x = pheno_num, y = log_surv, group = drawid, color = annee)) +
-  geom_line(alpha = 0.1) +
-  stat_summary(aes(group = 1), fun = mean, geom = "line", 
-               color = "black", linewidth = 1.2) +
-  scale_color_viridis_d(end = 0.8, guide = "none") +
-  scale_x_continuous(breaks = c(-1, 0, 1), labels = c("Early", "Peak", "Late")) +
-  facet_wrap(~ annee) +
-  labs(x = "Scénario phénologique", y = "log(survie)", title = "Dates BIOSIM") +
-  theme_cowplot() +
-  panel_border()
-
-# 3
-
-gradient_summary_biosim <- bind_rows(
-  beta_summary_2025_biosim %>% mutate(annee = "2025", gradient = "β (directionnel)", 
-                                      mean = beta_mean, lwr = beta_lwr, upr = beta_upr),
-  beta_summary_2026_biosim %>% mutate(annee = "2026", gradient = "β (directionnel)", 
-                                      mean = beta_mean, lwr = beta_lwr, upr = beta_upr),
-  gamma_summary_2025_biosim %>% mutate(annee = "2025", gradient = "γ (quadratique)", 
-                                       mean = gamma_mean, lwr = gamma_lwr, upr = gamma_upr),
-  gamma_summary_2026_biosim %>% mutate(annee = "2026", gradient = "γ (quadratique)", 
-                                       mean = gamma_mean, lwr = gamma_lwr, upr = gamma_upr)
-) %>%
-  select(annee, gradient, mean, lwr, upr)
-
-ggplot(gradient_summary_biosim, aes(x = mean, y = interaction(gradient, annee), color = annee)) +
-  geom_vline(xintercept = 0, linetype = "dashed", color = "grey50") +
-  geom_pointrange(aes(xmin = lwr, xmax = upr), linewidth = 0.8, size = 0.8) +
-  scale_color_manual(values = c("2025" = "#2C5F7C", "2026" = "#D97B3F")) +
-  labs(x = "Estimé du gradient de sélection", y = NULL, color = "Année",
-       title = "Gradients de sélection (dates BIOSIM)") +
-  theme_cowplot()
-
-#4
-
-fit_lines <- function(preds_draws, annee_label) {
-  preds_draws %>%
-    mutate(
-      surv = 1 - draw,
-      pheno_num = case_when(
-        pheno.c == "early" ~ -1,
-        pheno.c == "peak"  ~ 0,
-        pheno.c == "late"  ~ 1
-      )
-    ) %>%
-    group_by(drawid, pheno_num) %>%
-    summarise(surv_prod = prod(surv), .groups = "drop") %>%
-    mutate(log_surv = log(surv_prod)) %>%
-    group_by(drawid) %>%
-    summarise(
-      intercept = coef(lm(log_surv ~ pheno_num))[1],
-      beta      = coef(lm(log_surv ~ pheno_num))[2],
-      .groups = "drop"
-    ) %>%
-    mutate(annee = annee_label)
-}
-
-lines_2025_biosim <- fit_lines(preds_draws_2025_biosim, "2025")
-lines_2026_biosim <- fit_lines(preds_draws_2026_biosim, "2026")
-
-lines_all_biosim <- bind_rows(lines_2025_biosim, lines_2026_biosim)
-
-set.seed(123)
-sampled_lines_biosim <- lines_all_biosim %>%
-  group_by(annee) %>%
-  slice_sample(n = 300) %>%
-  ungroup()
-
-pheno_grid <- seq(-1, 1, by = 0.1)
-
-lines_expanded_biosim <- sampled_lines_biosim %>%
-  rowwise() %>%
-  mutate(pheno_num = list(pheno_grid)) %>%
-  unnest(pheno_num) %>%
-  mutate(fitted = intercept + beta * pheno_num)
-
-mean_lines_biosim <- lines_all_biosim %>%
-  group_by(annee) %>%
-  summarise(intercept_mean = mean(intercept), beta_mean = mean(beta), .groups = "drop") %>%
-  rowwise() %>%
-  mutate(pheno_num = list(pheno_grid)) %>%
-  unnest(pheno_num) %>%
-  mutate(fitted = intercept_mean + beta_mean * pheno_num)
-
-ggplot() +
-  geom_line(data = lines_expanded_biosim, aes(x = pheno_num, y = fitted, group = drawid), 
-            alpha = 0.08, color = "steelblue") +
-  geom_line(data = mean_lines_biosim, aes(x = pheno_num, y = fitted), 
-            color = "black", linewidth = 1.2) +
-  scale_x_continuous(breaks = c(-1, 0, 1), labels = c("Early", "Peak", "Late")) +
-  facet_wrap(~ annee) +
-  labs(
-    x = "Scénario phénologique",
-    y = "log(survie relative) ajustée",
-    title = "Gradient de sélection directionnel (dates BIOSIM)"
-  ) +
-  theme_cowplot() +
-  panel_border()
-
-#5
-ptoid_main_2025 <- readRDS("ptoid_main_2025.rds")
-ptoid_main_2026 <- readRDS("ptoid_main_2026.rds")
-  
-  feuillus_values_2025 <- data_nopupe_2025 %>%
-  distinct(parcelle, feuillus) %>%
-  pull(feuillus) %>%
-  unique() %>%
-  sort()
-
-feuillus_values_2026 <- data_nopupe_2026 %>%
-  distinct(parcelle, feuillus) %>%
-  pull(feuillus) %>%
-  unique() %>%
-  sort()
-
-length(feuillus_values_2025)
-length(feuillus_values_2026)
-
-# ---- Grilles de dates BIOSIM par année ----
-
-grille_dates_2025_biosim <- expand.grid(
-  date_pose.c = c(147, 153, 162,   # early
-                  153, 159, 171,   # peak
-                  160, 168, 182)   # late
-) %>%
-  mutate(
-    pheno.c = case_when(
-      date_pose.c %in% c(147, 153, 162) ~ "early",
-      date_pose.c %in% c(153, 159, 171) ~ "peak",
-      date_pose.c %in% c(160, 168, 182) ~ "late"
-    ),
-    pheno.c  = factor(pheno.c, levels = c("early", "peak", "late")),
-    parcelle = factor(levels(data_nopupe_2025$parcelle)[1], levels = levels(data_nopupe_2025$parcelle))
-  )
-
-grille_dates_2026_biosim <- expand.grid(
-  date_pose.c = c(145, 151, 163,   # early
-                  155, 162, 176,   # peak
-                  166, 174, 190)   # late
-) %>%
-  mutate(
-    pheno.c = case_when(
-      date_pose.c %in% c(145, 151, 163) ~ "early",
-      date_pose.c %in% c(155, 162, 176) ~ "peak",
-      date_pose.c %in% c(166, 174, 190) ~ "late"
-    ),
-    pheno.c  = factor(pheno.c, levels = c("early", "peak", "late")),
-    parcelle = factor(levels(data_nopupe_2026$parcelle)[1], levels = levels(data_nopupe_2026$parcelle))
-  )
-
-#  Fonction
-
-compute_beta_par_feuillus <- function(grille_dates, feuillus_values, modele) {
-  
-  prediction_data <- feuillus_values %>%
-    map_df(function(f) grille_dates %>% mutate(feuillus = f))
-  
-  preds_bayes <- predictions(modele, newdata = prediction_data,
-                             re_formula = NA, type = "response")
-  preds_draws <- get_draws(preds_bayes)
-  
-  preds_draws %>%
-    mutate(
-      surv = 1 - draw,
-      pheno_num = case_when(
-        pheno.c == "early" ~ -2,
-        pheno.c == "peak"  ~ 0,
-        pheno.c == "late"  ~ 2
-      )
-    ) %>%
-    group_by(feuillus, drawid, pheno_num) %>%
-    summarise(surv_prod = prod(surv), .groups = "drop") %>%
-    mutate(log_surv = log(surv_prod)) %>%
-    group_by(feuillus, drawid) %>%
-    summarise(beta = coef(lm(log_surv ~ pheno_num))[2], .groups = "drop") %>%
-    group_by(feuillus) %>%
-    summarise(
-      beta_mean = mean(beta),
-      beta_lwr  = quantile(beta, 0.025),
-      beta_upr  = quantile(beta, 0.975),
-      .groups = "drop"
-    )
-}
-
-# ---- Application aux deux modèles séparés, avec dates BIOSIM ----
-
-beta_par_feuillus_2025_biosim <- compute_beta_par_feuillus(grille_dates_2025_biosim, feuillus_values_2025, ptoid_main_2025)
-beta_par_feuillus_2026_biosim <- compute_beta_par_feuillus(grille_dates_2026_biosim, feuillus_values_2026, ptoid_main_2026)
-
-print(beta_par_feuillus_2025_biosim)
-print(beta_par_feuillus_2026_biosim)
-
-## ---- Visualisation ----
-
-beta_combined_biosim <- bind_rows(
-  beta_par_feuillus_2025_biosim %>% mutate(annee = "2025"),
-  beta_par_feuillus_2026_biosim %>% mutate(annee = "2026")
-)
-
-ggplot(beta_combined_biosim, aes(x = feuillus, y = beta_mean, color = annee, fill = annee)) +
-  geom_ribbon(aes(ymin = beta_lwr, ymax = beta_upr), alpha = 0.15, color = NA) +
-  geom_line(linewidth = 1) +
-  geom_hline(yintercept = 0, linetype = "dashed", color = "grey40") +
-  labs(
-    x = "% Feuillus",
-    y = "Gradient de sélection (beta) sur la phénologie",
-    color = "Année", fill = "Année",
-    title = "Variation du gradient de sélection phénologique selon le couvert feuillu, par année (dates BIOSIM)"
-  ) +
-  theme_minimal()
